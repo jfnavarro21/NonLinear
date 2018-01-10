@@ -1,0 +1,244 @@
+---
+title: "NL Week1 Workshop"
+author: "John Navarro"
+date: "January 5, 2018"
+output: html_document
+---
+# Prepare the data
+```{r}
+# Read the project data
+datapath <- "C:/Users/JohntheGreat/Documents/MSCA/LinearNonLinear/Week1_MaxLikelihood"
+Linear.Model.Data<-read.csv(paste(datapath,"Week1ProjectData.csv",sep='/') ,header=TRUE,sep=",")
+# return first 10 rows
+Linear.Model.Data[1:10,]
+Linear.Model.Data.Frame <- as.data.frame(Linear.Model.Data)
+
+```
+# Fit linear model using lm() and glm()
+```{r}
+Linear.Model.Data.lm<-lm(Output~Input,data=Linear.Model.Data.Frame)
+Linear.Model.Data.glm<-glm(Output~Input,family=gaussian(link="identity"),data=Linear.Model.Data.Frame)
+```
+Check and compare the names of the objects elements in both fits
+```{r}
+names(Linear.Model.Data.lm)
+```
+```{r}
+names(Linear.Model.Data.glm)
+```
+Compare the summaries of outputs
+```{r}
+summary(Linear.Model.Data.lm)
+summary(Linear.Model.Data.glm)
+```
+# Compare the Model Objects
+
+Compare the following fields in the model objects. Calculat ethe outputs of glm() using the fields of lm()
+
+## 1. Coefficients
+Come from both functions and have the same meaning and values
+```{r}
+cbind(Output.LM=Linear.Model.Data.lm$coefficients, Output.GLM=Linear.Model.Data.glm$coefficients)
+```
+
+## 2. Residuals
+
+In the case of Gaussian linear model, maximization of log-likelihood is equivalent to minimization of SSE, this should result in the same values for the residuals of lm() and glm()
+```{r}
+cbind(Output.LM=Linear.Model.Data.lm$residuals, Output.GLM=Linear.Model.Data.glm$residuals)[1:10,]
+```
+```{r}
+(Linear.Model.Data.lm$residuals == Linear.Model.Data.glm$residuals)[1:10]
+```
+This comparison tells us that the values of residuals from lm() are not identical to residuals from glm(), but this is a result of two different numerical methods used by the functions: maximum log-likelihood in glm() vs minimum least squares in lm()
+```{r}
+sum(abs(Linear.Model.Data.lm$residuals - Linear.Model.Data.glm$residuals)>.0000000000001)
+```
+Different types of residuals
+```{r}
+Different.Residuals<-cbind(Linear.Model.Data.lm$residuals,
+                           resid(Linear.Model.Data.glm,type="deviance"),
+                           resid(Linear.Model.Data.glm,type="pearson"),
+                           resid(Linear.Model.Data.glm,type="working"),
+                           resid(Linear.Model.Data.glm,type="response"),
+                           Linear.Model.Data.glm$residuals)
+Different.Residuals[1:10,]
+```
+Calculate sums of absolute differneces between all types of residuals and lm residuals to see they are practiacally identical
+```{r}
+apply(Different.Residuals[,-1],2, function(column.vector) sum(abs(column.vector-Different.Residuals[,1])))
+```
+
+## 3. Fitted values
+
+Check that in the case of Gaussian linear model there is no difference between the returned fitted values
+```{r}
+(Linear.Model.Data.lm$fitted.values == Linear.Model.Data.glm$fitted.values)[1:10]
+# chck the sum of the absolute value of the difference between models' residuals
+(sum(abs(Linear.Model.Data.lm$fitted.values - Linear.Model.Data.glm$fitted.values)))
+```
+
+## 4. Linear predictors
+
+Check the definition of linear predictor in the lecture. To fit linear model with glm() we use link="identity", so linear.predictors of glm() in this particular case are the same as fitted. values of lm()
+
+```{r}
+sum(abs(Linear.Model.Data.lm$fitted.values-Linear.Model.Data.glm$linear.predictors))
+```
+Note that in general case, linear.predictors not only do not have to be equal to the fitted.values of lm() estimated from the same data, but they even do not have to be equal to fitted.values of glm(). this is because the link is what transsforms thelinear.predictors to the fitted values in glm. If we use the identity link, then obviously the two are equal. However, if we use a different link, like logit. then the linear predictors (eta) are equal to log(mu/1-mu), where mu is the fitted values. 
+
+## 5. Deviance
+
+Check that in the case of Gaussian linear model, deviance is equivalent to the sum of squares of errors (SSE). Calculate deviance using deviance() function, and manually compare with Linear.Model.Data.glm$deviance
+```{r}
+# SSE vs Deviance
+c(From.GLM=Linear.Model.Data.glm$deviance,
+  From.LM=sum(Linear.Model.Data.lm$residuals^2),
+  Function.Deviance=deviance(Linear.Model.Data.lm))
+```
+
+## 6. Akaike Information Criterion
+
+```{r}
+#Use AIC() on a model object
+From.AIC.function <- AIC(Linear.Model.Data.lm)
+# extract the object element from glm
+AIC.From.glm <- Linear.Model.Data.glm$aic
+# concatenate and display both aic's
+c(From.AIC.function, AIC.From.glm)
+```
+The result of manual calculation printed below confirms the correctness of our manual definition of aic.
+Write your own function for calculation of normal log-likelihood.
+The first line of the function could look like Manual.Log.Likelihood<- function(Linear.Model.Fit) {, where  Linear.Model.Fit is the object created by lm() in the process of fitting a linear model.
+```{r}
+Manual.Log.Likelihood<- function(Linear.Model.Fit) {
+  my.Total.Length<-length(Linear.Model.Fit$residuals)
+  my.Number.Of.Parameters<-Linear.Model.Fit$rank
+  my.Variance.Estimate<-summary(Linear.Model.Fit)$sigma^2*(my.Total.Length-my.Number.Of.Parameters)/my.Total.Length
+  (-my.Total.Length/2*log(2*pi*my.Variance.Estimate)-sum(Linear.Model.Fit$residuals^2)/2/my.Variance.Estimate)
+}
+```
+```{r}
+Log.Likelihood <- Manual.Log.Likelihood(Linear.Model.Data.lm)
+AIC.Manual <- (-2*(Log.Likelihood)+2*(Linear.Model.Data.lm$rank+1))
+c(AIC.Manual=AIC.Manual, AIC.From.Function=From.AIC.function, AIC.From.glm=AIC.From.glm)
+```
+## 7. Output y
+
+This is the Output in the data frame to which the model was fit.
+```{r}
+# check that the outputs are the same
+sum(abs(Linear.Model.Data[,1]-Linear.Model.Data.glm$y))
+```
+## 8. Null Deviance
+
+Null deviance of glm() is the deviance of the null model, ie the model that has only intercept. Since deviance of glm() in case of gaussian is equivalaent to SSE of lm(), we need to estimate the null model with only interctpt and calculate its SSE
+```{r}
+Linear.Model.Data.Null.lm <- lm(Output~1, data=Linear.Model.Data)
+Linear.Model.Data.Null.lm.SSE <- sum(Linear.Model.Data.Null.lm$residuals^2)
+c(Null.SSE.lm=Linear.Model.Data.Null.lm.SSE, Null.Deviance.glm=Linear.Model.Data.glm$null.deviance)
+```
+
+
+## 9. Dispersion - synonym of variance
+
+Compare dispersion returned by glm() with sigma returned by lm() and var(Linear.Model.Data.lm$residuals)
+
+Explain observed similaritires or differences.
+1. Print out dispersion returned by glm()
+2. Print out sigma returned by lm()
+What needs to be done in order to calculate dispersion from sigma?
+3. Calculate and print out variance of residuals from both lm() and glm().
+What needs to be done in order to calculate dispersion from each of them?
+since var() uses n-1 in the denominator and dispersion uses n-2 in the denominator, when we go from var to dispersion, we need to adjust the var value by the ratio (n-1)/(n-2)
+```{r}
+summary(Linear.Model.Data.glm)$dispersion
+summary(Linear.Model.Data.lm)$sigma^2
+var(Linear.Model.Data.lm$residuals)*(length(Linear.Model.Data.lm$residuals)-1)/(length(Linear.Model.Data.lm$residuals)-2)
+var(Linear.Model.Data.glm$residuals)*(length(Linear.Model.Data.glm$residuals)-1)/(length(Linear.Model.Data.glm$residuals)-2)
+```
+
+## 10. The saturated model and the null model: log-likelihood functions and AIC
+
+Null Model
+For both the log-likelihood function and AIC of the null model we can use the object Linear.Model.Data.Null.lm created earlier
+First use the functions logLik() and AIC(), both from {stats}
+```{r}
+(Null.Log.Likelihood.logLik <- logLik(Linear.Model.Data.Null.lm))
+(Null.AIC <- AIC(Linear.Model.Data.Null.lm))
+```
+Calculate the log-likelihood of the null model the same way as in 6, but based on Linear.Model.Data.Null.lm
+use the function from step 6
+```{r}
+Log.Likelihood.Null <- Manual.Log.Likelihood(Linear.Model.Data.Null.lm)
+```
+
+Compare the log-likelihood of the null model the same way as in 6, but based on Linear.Model.Data.Null.lm
+Use the log-likelihood function that you created in 6.
+```{r}
+c(Log.Likelihood.Null=Log.Likelihood.Null, 
+  Log.Likelihood=Log.Likelihood,
+  Null.Log.Likelihood.logLik=Null.Log.Likelihood.logLik)
+```
+Explain the difference between the values for the null model and the value of Log.Likelihood.
+Complete the study of the null model with manual calcualation of AIC. Compare with the earlier output of AIC()
+```{r}
+AIC.Manual.Null <- -2*(Log.Likelihood.Null)+2*(Linear.Model.Data.Null.lm$rank+1)
+c(AIC.Manual.Null, Null.AIC)
+```
+Saturated Model
+See the formula for the log-likelihood function of the saturated model in the lecture. Note that it is not well defined because it still depeneds on the unknown paramter sigma. In order to understand how the calcualations are done for the saturated model create a small set of data:
+```{r}
+# small set of data
+Small.Y <- c(5,4)
+Small.X <- c(3,6)
+Small.Data <- as.data.frame(cbind(Output=Small.Y, Input=Small.X))
+```
+
+Fit both lm() and glm(family=gaussian(link-"identity") to small data)
+
+```{r}
+Small.glm <- glm(Output~Input, family=gaussian(link="identity"), data=Small.Data)
+Small.lm <- lm(Output~Input, data=Small.Data)
+summary(Small.glm)
+```
+```{r}
+summary(Small.lm)
+```
+Check that fitted values of both models match
+```{r}
+Small.glm$fitted.values
+Small.lm$fitted.values
+Small.glm$y
+```
+Compare the results of logLik() for both lm and glm
+```{r}
+logLik(Small.glm)
+logLik(Small.lm)
+logLik(Small.lm, REML = TRUE)
+```
+Calculate the dispersion value implied from logLik(Small.glm) using the formula for log-likelihood function in the lecture. Note that for Small.Data the number of observations n=2
+```{r}
+Implied.Sigma <- sqrt(exp(-logLik(Small.glm))/2/pi)
+Implied.Sigma
+```
+It seems like logLik(Small.glm) returns the theoretical value of the log-likelihood function for the smallest allowed value of standard deviation.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
