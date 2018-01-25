@@ -1,0 +1,440 @@
+---
+title: "NL Week3 Workshop"
+author: "John Navarro"
+date: "January 19, 2018"
+output: pdf_document
+---
+#1. Misleading Correlation: Examples
+
+## 1.1 Example of uncorrelated, but dependent variables
+```{r}
+nSample <- 1000
+set.seed(893075)
+Variable.X <- rnorm(nSample, 0,1)
+Variable.Y <- Variable.X^2
+df <- data.frame(X=Variable.X, Y=Variable.Y)
+plot(df$X, df$Y, ylab= "Y", xlab="X")
+```
+```{r}
+# Calculate the correlation for the two variables
+(rho <- cor(Variable.X, Variable.Y))
+# Calculate the r squared
+rho^2
+# plot empirical copula
+plot(rank(Variable.X)/nSample,rank(Variable.Y)/nSample)
+```
+Summary:
+We see that the variables are dependent, although correlation shows us that there is no correlation (no dependence). Just looking at the plot we, know there is a nonlinear dependence. We look at the empirical copula, this shows strong dependence, counter monotonic in the first half and comonotonic in the second part. 
+## 1.2 The parttern may be explained by marginal distributions rather than dependence between the variables.
+```{r}
+library(MASS)
+```
+Create variables X, Y, Z
+```{r}
+set.seed(893075)
+Variable.X <- rexp(nSample, 1)
+Variable.Y <- rnorm(nSample, 0,1)
+Variable.Z <- rexp(nSample, .3)
+df <- data.frame(X=Variable.X, Y=Variable.Y, Z=Variable.Z)
+
+
+```
+Both scatter plots below are for 2 pairs of independent variables
+In one case one marginal distribution is normal, the other is exponential
+```{r}
+plot(df$X, df$Y)
+```
+```{r}
+# correlation of Variable.X and Variable.Y
+(cor(df$X, df$Y))
+# color contour plot of densities
+k <- kde2d(df$X, df$Y, n=200)
+image(k, col=rainbow(20))
+```
+Consider X vs Z, both exponential
+```{r}
+# plot X vs Z
+plot(df$X, df$Z)
+# correlation of X and Z
+(cor(df$X, df$Z))
+# Color contour plot of X and Z
+k <- kde2d(df$X, df$Z, n=200)
+image(k,col=rainbow(40))
+```
+Empirical copula shows independence in both cases
+```{r}
+plot(rank(df$X)/nSample, rank(df$Y)/nSample)
+```
+
+```{r}
+# plot of empirical copula of X and Z
+plot(rank(df$X)/nSample, rank(df$Z)/nSample)
+```
+
+Summary: All 3 variables are independent, but show different patterns. Pairwise correlations are not significant. Empirical copula shows the independnce in both cases
+
+## 1.3 Example of two independent stnadar normal samples show on slide 14 in lecture notes
+
+```{r}
+Learning.Sample.X<-c(-2.224,-1.538,-0.807,0.024,0.052,1.324)  
+Learning.Sample.Y<-c(0.431,1.035,0.586,1.465,1.115,-0.847)
+learning.df<-data.frame(X=Learning.Sample.X,Y=Learning.Sample.Y)
+cor(learning.df$X,learning.df$Y)^2
+```
+
+```{r}
+cor(exp(learning.df$X), 3*exp(learning.df$Y))^2
+```
+```{r}
+plot(learning.df$X, learning.df$Y, xlim=c(-2.5,4),ylim=c(-2,13),col="black",pch=16)
+points(exp(learning.df$X), 3*exp(learning.df$Y), col="red", pch=16)
+legend("topleft", legend=c("Original","Transformed"), lty=1, lwd=2, col=c("black","red"))
+```
+Plot the normalized ranks of both the original and transformed  XY
+```{r}
+plot(rank(learning.df$X)/6,rank(learning.df$Y)/6,col="black",pch=16)  
+points(rank(exp(learning.df$X))/6,rank(3*exp(learning.df$Y))/6,col="red",pch=20)  
+legend("topleft",legend=c("Original","Transformed"),lty=1,lwd=2,col=c("black","red"))
+```
+
+Summary: The samples are independent regardless of monotonic transformation. Their scatter plot changes after a monotonic transformation. Their determination coefficent changes after a monotonic transformaiton. While their empirical copula remains the same
+
+
+# 2. Parametric Copulas
+
+Empirical coplual is a non parameteric type of copula which is useful as a first step of analysis when we try to evaluate existance and possible type of non linear dependence
+Parameteric copula models can be fit to the dat and used for comparison, simulation, risk analysis and other applications
+
+## 2.1 Gaussian Copulas
+```{r}
+library(copula)
+```
+
+Correlation for Gaussian copula is the measure of dependence
+
+```{r}
+par(mfrow=c(2,2))
+set.seed(8301735)
+#Gaussian Copula, rho=0.9
+Gaussian.Copula.0.9<-normalCopula(param=.9,dim=2)
+# persp() draws perspective plots of a surface over the xy plane
+persp(Gaussian.Copula.0.9, dCopula, main="pdf",xlab="u", ylab="v", zlab="c(u,v)")
+# contour plot
+contour(Gaussian.Copula.0.9,dCopula, main="pdf",xlab="u", ylab="v")
+# Simulate a copula
+Simulated.Gaussian.Copula.0.9<-rCopula(5000,Gaussian.Copula.0.9)
+SimulatedN<-length(Simulated.Gaussian.Copula.0.9[,1])
+# Plot the simulated copula
+plot(Simulated.Gaussian.Copula.0.9,main="Simulated Copula",xlab="Variable 1",ylab="Variable 2")
+# Plot the normalized ranks of the simulated copula
+plot(apply(Simulated.Gaussian.Copula.0.9,2,rank)/SimulatedN,
+     main="Empirical Copula",xlab="Variable 1",ylab="Variable 2")
+title(main="Gaussian Copula, rho=0.9",outer=TRUE,line=-2)
+```
+```{r}
+# Color countor plot of simulated copula
+par(mfrow=c(1,1))
+k <- kde2d(rank(Simulated.Gaussian.Copula.0.9[,1])/SimulatedN,
+           rank(Simulated.Gaussian.Copula.0.9[,2])/SimulatedN, n=100)
+image(k,col=topo.colors(20))
+```
+
+## 2.1.2 Case:Rho=-0.9
+
+```{r}
+par(mfrow=c(2,2))
+set.seed(8301735)
+#Gaussian Copula, rho=-0.9
+Gaussian.Copula.Minus0.9<-normalCopula(param=-.9,dim=2)
+persp(Gaussian.Copula.Minus0.9, dCopula, main="pdf",xlab="u", ylab="v", zlab="c(u,v)")
+contour(Gaussian.Copula.Minus0.9,dCopula, main="pdf",xlab="u", ylab="v")
+Simulated.Gaussian.Copula.Minus0.9<-rCopula(5000,Gaussian.Copula.Minus0.9)
+SimulatedN<-length(Simulated.Gaussian.Copula.Minus0.9[,1])
+plot(Simulated.Gaussian.Copula.Minus0.9,main="Simulated Copula",xlab="Variable 1",ylab="Variable 2")
+plot(apply(Simulated.Gaussian.Copula.Minus0.9,2,rank)/SimulatedN,main="Empirical Copula",xlab="Variable 1",ylab="Variable 2")
+title("Gaussian Copula, rho=-0.9",outer=TRUE,line=-2)
+```
+
+
+Color contour plot of simulated copula
+```{r}
+par(mfrow=c(1,1))
+k <- kde2d(rank(Simulated.Gaussian.Copula.Minus0.9[,1])/SimulatedN,
+           rank(Simulated.Gaussian.Copula.Minus0.9[,2])/SimulatedN, n=100)
+image(k,col=topo.colors(20))
+```
+
+### 2.1.3 Case: Rho = 0
+```{r}
+par(mfrow=c(2,2))
+set.seed(8301735)
+#Gaussian Copula, rho=0
+Gaussian.Copula.0<-normalCopula(param=0,dim=2)
+persp(Gaussian.Copula.0, dCopula, main="pdf",xlab="u", ylab="v", zlab="c(u,v)")
+contour(Gaussian.Copula.0,dCopula, main="pdf",xlab="u", ylab="v")
+Simulated.Gaussian.Copula.0<-rCopula(5000,Gaussian.Copula.0)
+SimulatedN<-length(Simulated.Gaussian.Copula.0[,1])
+plot(Simulated.Gaussian.Copula.0,main="Simulated Copula",xlab="Variable 1",ylab="Variable 2")
+plot(apply(Simulated.Gaussian.Copula.0,2,rank)/length(Simulated.Gaussian.Copula.0[,1]),main="Empirical Copula",xlab="Variable 1",ylab="Variable 2")
+title("Gaussian Copula, rho=0",outer=TRUE,line=-2)
+```
+Color contour plot of gaussian copula with parameter = 0
+```{r}
+par(mfrow=c(1,1))
+k <- kde2d(rank(Simulated.Gaussian.Copula.0[,1])/SimulatedN,
+           rank(Simulated.Gaussian.Copula.0[,2])/SimulatedN, n=100)
+image(k,col=topo.colors(20))
+```
+
+# 3. Simulation of dependent random variables using copulas
+```{r}
+par(mfrow=c(2,2))
+# plot X values of copula vs index
+matplot(1:5000,Simulated.Gaussian.Copula.0.9[,1],pch=19,main="Simulated Uniform Variable",xlab="Count",ylab="Simulated Variable")
+# Plot the inverse cdf (pth quantile) of gaussian copula
+matplot(1:5000,qnorm(Simulated.Gaussian.Copula.0.9[,1]),pch=19,main="Simulated Normal Variable",xlab="Count",ylab="Simulated Variable")
+# Histogram of simulated variable (Uniform distribution)
+# uniform space
+hist(Simulated.Gaussian.Copula.0.9[,2],main="Histogram of Simulated Variable",xlab="Simulated Variable",ylab="Frequency")
+# hist of qnorm of simulated copula X values
+# guassian space that we made from uniform
+hist(qnorm(Simulated.Gaussian.Copula.0.9[,1]),main="Histogram of qnorm(Simulated Variable)",xlab="Simulated Variable",ylab="Frequency")
+# pnorm will take us the opposite way
+```
+Comparison of the simultaed copula with the empirical copula
+```{r}
+par(mfrow=c(1,2))
+# plot of simulated copula
+plot(Simulated.Gaussian.Copula.0.9[,1],Simulated.Gaussian.Copula.0.9[,2],xlim=c(0,1),ylim=c(0,1),
+     xlab="Simulated Copula X",ylab="Simulated Copula Y")
+# plot of normalized ranks of qnorm copula (transformed copula data)
+plot(rank(qnorm(Simulated.Gaussian.Copula.0.9[,1]))/5000,rank(qnorm(Simulated.Gaussian.Copula.0.9[,2]))/5000,
+     xlim=c(0,1),ylim=c(0,1),xlab="Rank of Simulated Copula X",ylab="Rank of Simulated Copula Y")
+```
+
+One of the marginal distributions changes to exponential distribution. The scatterplot gets affected, but the copula does not
+```{r}
+plot(qexp(Simulated.Gaussian.Copula.0.9[,1],1),qnorm(Simulated.Gaussian.Copula.0.9[,2]),
+     xlab="Exponential Distribution",ylab="Normal Distribution")
+```
+```{r}
+plot(rank(qexp(Simulated.Gaussian.Copula.0.9[,1],1))/5000,rank(qnorm(Simulated.Gaussian.Copula.0.9[,2]))/5000,
+     xlim=c(0,1),ylim=c(0,1),xlab="Rank of Exponential",ylab="Rank of Normal")
+```
+
+# 4. Types of dependency
+## 4.1 Tail dependence
+### 4.1.1 Upper tail dependence: Gumbel copula
+
+```{r}
+par(mfrow=c(2,2))
+set.seed(8301735)
+#Gumbel Copula, rho=0
+Gumbel.Copula.5<-gumbelCopula(param=5,dim=2)
+persp(Gumbel.Copula.5, dCopula, main="pdf",xlab="u", ylab="v", zlab="c(u,v)")
+contour(Gumbel.Copula.5,dCopula, main="pdf",xlab="u", ylab="v")
+# simulate using rCopula
+Simulated.Gumbel.Copula.5<-rCopula(5000,Gumbel.Copula.5)
+SimulatedN<-length(Simulated.Gumbel.Copula.5[,1])
+# Plot of simulated copula
+plot(Simulated.Gumbel.Copula.5,main="Simulated Copula",xlab="Variable 1",ylab="Variable 2")
+# plot of normalized ranks of copula
+plot(apply(Simulated.Gumbel.Copula.5,2,rank)/SimulatedN,main="Empirical Copula",xlab="Variable 1",ylab="Variable 2")
+title("Gumbel Copula, param=5",outer=TRUE,line=-2)
+```
+
+Colored contour of Gumbel copula
+```{r}
+par(mfrow=c(1,1))
+k <- kde2d(rank(Simulated.Gumbel.Copula.5[,1])/SimulatedN,
+           rank(Simulated.Gumbel.Copula.5[,2])/SimulatedN, n=100)
+image(k,col=topo.colors(20))
+```
+### 4.1.2 Lower tail dependence: Clayton copula
+```{r}
+par(mfrow=c(2,2))
+set.seed(8301735)
+#Clayton Copula, rho=0
+Clayton.Copula.5<-claytonCopula(param=5,dim=2)
+persp(Clayton.Copula.5, dCopula, main="pdf",xlab="u", ylab="v", zlab="c(u,v)")
+contour(Clayton.Copula.5,dCopula, main="pdf",xlab="u", ylab="v")
+Simulated.Clayton.Copula.5<-rCopula(5000,Clayton.Copula.5)
+SimulatedN<-length(Simulated.Clayton.Copula.5[,1])
+plot(Simulated.Clayton.Copula.5,main="Simulated Copula",xlab="Variable 1",ylab="Variable 2")
+SimulatedN<-length(Simulated.Clayton.Copula.5[,1])
+plot(apply(Simulated.Clayton.Copula.5,2,rank)/SimulatedN,main="Empirical Copula",
+     xlab="Variable 1",ylab="Variable 2")
+title("Clayton Copula, param=5",outer=TRUE,line=-2)
+```
+Colored contour of Clayton copula (lower tail)
+```{r}
+par(mfrow=c(1,1))
+k <- kde2d(rank(Simulated.Clayton.Copula.5[,1])/SimulatedN,
+           rank(Simulated.Clayton.Copula.5[,2])/SimulatedN, n=100)
+image(k,col=topo.colors(20))
+```
+### 4.1.3 Symmetricaltail dependence :Frank Copula
+```{r}
+par(mfrow=c(2,2))
+set.seed(8301735)
+#Frank Copula, Theta=5
+Frank.Copula<-frankCopula(param=5,dim=2)
+persp(Frank.Copula, dCopula, main="pdf",xlab="u", ylab="v", zlab="c(u,v)")
+contour(Frank.Copula,dCopula, main="pdf",xlab="u", ylab="v")
+Simulated.Frank.Copula<-rCopula(5000,Frank.Copula)
+SimulatedN<-length(Simulated.Frank.Copula[,1])
+plot(Simulated.Frank.Copula,main="Simulated Copula",xlab="Variable 1",ylab="Variable 2")
+Empirical.Frank.Copula<-apply(Simulated.Frank.Copula,2,rank)/SimulatedN
+plot(Empirical.Frank.Copula,main="Empirical Copula",xlab="Variable 1",ylab="Variable 2")
+title("Frank Copula, param=5",outer=TRUE,line=-2)
+```
+```{r}
+par(mfrow=c(1,1))
+k <- kde2d(rank(Simulated.Frank.Copula[,1])/SimulatedN,
+           rank(Simulated.Frank.Copula[,2])/SimulatedN, n=100)
+image(k,col=topo.colors(20))
+```
+# 5. Fitting a Copula
+Fit Gaussian copula to Simulated. Gaussian.Copula.0.9 with normal marginal distributions
+
+1. Create the sample
+```{r}
+Sample.For.Fitting.Gaussian.Copula<-cbind(qnorm(Simulated.Gaussian.Copula.0.9[,1]),qnorm(Simulated.Gaussian.Copula.0.9[,2],3,5))    
+```
+
+check the correlation between the variables
+```{r}
+cor(Sample.For.Fitting.Gaussian.Copula)
+```
+Fit Gaussian copula
+```{r}
+# using parameter = 0 
+Gaussian.Copula.Object<-normalCopula(param=0,dim=2)
+Gaussian.Copula.fit<-fitCopula(Gaussian.Copula.Object, 
+          pobs(Sample.For.Fitting.Gaussian.Copula,ties.method = "average"), 
+          method = "ml",
+          optim.method = "BFGS", 
+          optim.control = list(maxit=1000))
+Gaussian.Copula.fit
+```
+Check how pobs() works
+```{r}
+(pobs.manual<-head(apply(Sample.For.Fitting.Gaussian.Copula,2,function(z) rank(z)/(length(z)+1))))
+```
+```{r}
+head(pobs(Sample.For.Fitting.Gaussian.Copula,ties.method = "average"))
+```
+Function pobs() creates pseudo observations from a matrix of observations by calculating empirical distributions of columns and renormalizing them.
+```{r}
+(exampleData <- cbind(1:5,10:6))
+pobs(exampleData)
+apply(exampleData,2,rank)/(dim(exampleData)[1]+1)
+```
+Alternatively, apply hist() to the first column of exampleData
+```{r}
+h<-hist(1:5,breaks=0:5)
+cumsum(h$density)
+# renormalze cumulative sum of density
+cumsum(h$density)*5/6
+```
+The reason for renormalization is to force all values strictly inside interval [0,1] and avoid calculation of distribution at boundaries. For large samples this renormalization does not change empirical distribution significantly.
+
+Compare the correlations
+```{r}
+Gaussian.Copula.fit
+cor(Sample.For.Fitting.Gaussian.Copula)
+```
+
+
+# 6 Workshop Project
+Download data
+```{r}
+datapath <- "C:/Users/JohntheGreat/Documents/MSCA/LinearNonLinear/Week3_Copula"
+exampleData<-read.csv(file=paste(datapath,"CorrelationExample.csv",sep="/"))
+head(exampleData)  
+```
+
+## 6.1 Visualize Data
+
+```{r}
+# Plot the downloaded data
+plot(exampleData$X, exampleData$Y)
+```
+
+## 6.2 Find approprate marginal distributions for variables X and Y
+
+Use fitdistr() from MASS to find parameters of each distribution
+Use KS test to check if the distributions fit well
+For the first variable X the analysis is
+
+```{r}
+# load MASS package
+library(MASS)
+# histogram of variable X data
+hist(exampleData$X)
+```
+```{r}
+# find the MLE parameters of each X distribution
+(fittedDistrX <- fitdistr(exampleData$X, "normal"))
+```
+
+```{r}
+# Use KS test to check if the distributions fit well
+ks.test(exampleData$X, "pnorm", mean=fittedDistrX$estimate[1], sd=fittedDistrX$estimate[2])
+```
+
+Kolmogorov-Smirnov test compares the empirical distribution of the given sample(first argument) with the theoretical distribution (second argument) with theoretical parameters
+
+H0: Empirical distribution is consistent with the theoretical distribution.  Here we do not reject the null hypothesis, so we assume that marginal distriuution of X is normal with parameters r, fitted DistrX
+
+Note that the parameters are very close to mu=0, sd=1
+
+Try to run KS test with standard normal hypothesis. If it passes the test you may assume standard normal distribution for X.
+
+Analyze marginal distrbution for Y for yourself
+Select from the following list of distributions: uniform, normal, lognormal, gamma, exponential.
+Check your intuition with the linked gallery of distributions
+```{r}
+hist(exampleData$Y)
+```
+```{r}
+(fittedDistrY <- fitdistr(exampleData$Y, "gamma"))
+```
+
+```{r}
+ks.test(exampleData$Y, "pgamma", fittedDistrY$estimate[1], fittedDistrY$estimate[2])
+```
+ Here we cannot reject the null hypothesis, so we say that the distributiton is gamma with the fitted parameters.
+ 
+## 6.3 Analyze correlation of the pair X and Y
+
+```{r}
+# fit with linear model
+lm.fit <- lm(Y~X, data=exampleData)
+summary(lm.fit)
+hist(lm.fit$residuals)
+```
+
+## 6.4 Analyze non-linear dependence between X and Y
+Plot empirical copula
+
+```{r}
+
+# plot empirical copula
+plot(rank(exampleData$X)/nrow(exampleData), rank(exampleData$Y)/nrow(exampleData))
+```
+
+Identify one of the copulas we studied and fit it to the data.
+Report the type of selected copula and the estimated dependence parameter
+
+```{r}
+library(copula)
+G.Cop.object <- normalCopula(param=0, dim=2)
+G.Cop.fit<-fitCopula(G.Cop.object, 
+          pobs(exampleData,ties.method = "average"), 
+          method = "ml",
+          optim.method = "BFGS", 
+          optim.control = list(maxit=1000))
+G.Cop.fit
+```
+
