@@ -1,0 +1,352 @@
+---
+title: "NL Week 3 Workshop 2"
+author: "John Navarro"
+date: "January 25, 2018"
+output: pdf_document
+---
+
+# 2.Anomaly detection techniques
+
+Anomaly or rare events detection is an important problem for many applications besides analysis of weather anomalies, for example, financial portfolio management, fraud detection, cyber security, etc.
+There are many efficient methods for anomaly detection with the basic idea of all of them: define a boundary separating "normal" events or observations and anomalies; then check if new observation can be categorized as normal or not.
+The key challenge of each method is to find a quantile corresponding to deep tail of the distribution of variable of interest.
+In case when variable of interest is univariate a commonly used method, for example, is extreme value theory.
+
+However, if the variable is multivariate and an anomali can be described as a combination of levels of its components, the universe of available methods becomes quite small.
+If components of the multivariate variable are independent then the problem is reduced to finding quantiles of one-dimensional marginal ditributions.
+In the case when the variable has multivariate normal distribution, one-dimensional quantile is replaced with an concentration ellipsoid of multivariate normal distribution which gives a simple analytical solution to the problem.
+But if marginal distributions are not normal and variables are not independent the problem becomes quite challenging.
+
+In the following sections anomaly detection problem is solved for a byvariate anomalies when the underlying variables are not Gaussian and may have nonlinear relationship.
+
+The method is based on copulas and quantile regression.
+
+# 3.Data preparation
+```{r}
+suppressWarnings(library(RNetCDF))
+suppressWarnings(library(copula))
+suppressWarnings(library(MASS))
+```
+## 3.1 Air temperature
+```{r}
+dataPath <- "C:/Users/JohntheGreat/Documents/MSCA/LinearNonLinear/Week3_Copula"
+pointTemper<-open.nc(con=paste(dataPath,"air.mon.mean.nc",sep="/"), write=FALSE, share=FALSE, prefill=TRUE)
+temperMon<-read.nc(pointTemper,unpack=T)
+names(temperMon)
+```
+The temperature file shows 17 levels of atmospheric pressure at which the data are collected (millibars).
+Only the first level, corresponding to surface is used.
+```{r}
+temperMon$level
+```
+The location latitude coordinates are shown at 73 levels ranging from 90° (N) to -90° (S).
+```{r}
+temperMon$lat
+```
+The location longitude coordinates are shown at 144 levels ranging from 0° (prime meridian, based at the Royal Observatory, Greenwich, in London) going around the world in Eastern direction to 357.5°.
+```{r}
+temperMon$lon
+```
+Finally, the grid of the air temperatures is a 4-dimensional array: longitude, latitude, level and the temperature. The length of the air temp sample is 37 yearsx12+6 months =450 months.
+```{r}
+dim(temperMon$air)
+```
+## 3.2 Precipitable Water
+```{r}
+pointWater<-open.nc(con=paste(dataPath,"pr_wtr.eatm.mon.mean.nc",sep="/"), write=FALSE, share=FALSE, prefill=TRUE)
+waterMon<-read.nc(pointWater,unpack=T)
+names(waterMon)
+```
+latitude and longitude are the same
+```{r}
+dim(waterMon$pr_wtr)
+```
+Precipitable water variable only contains laitiude, longitude and the grid of water observations for 450 months.
+
+## 3.3 Selecting location
+
+Set location to Maiami area (80.1918° W, 25.7617° N).
+Recalculate location longitude from the common format 80.1918° W into 0°-360° range: the format of coordinates used in NCEP 2 files.
+Do it by adding 360°: ???80.1918+360=279.8082
+```{r}
+#Longitude
+# Miami, FL 80.1918W -> -80.1918+360=279.8082
+ lon<-279.8082
+#Latitude
+# Miami, FL 25.7617N
+ lat<-25.7617
+```
+Select grid node closest to Miami
+```{r}
+(idxLon <- temperMon$lon[which.min(abs(temperMon$lon-lon))])
+```
+```{r}
+allLat <- if(lat>=0) {
+  temperMon$lat[temperMon$lat>=0]
+}   else{
+    temperMon$lat[temperMon$lat<0]
+}
+# Determine the closest latitude grid node closest to Miami
+(idxLat <- temperMon$lat[which.min(abs(temperMon$lat-lat))])
+```
+```{r}
+#months
+temperDates<-c(rep(1:12,37),1:6) #months
+(nTime<-length(temperDates))
+```
+
+## 3.4 Normalized temperatures
+Create time series of temperature, then normalize it
+```{r}
+# select only data for miami's longitude and latitude,  level=1000, for all months
+temperMonLocat<-temperMon$air[temperMon$lon==idxLon,temperMon$lat==idxLat,1,]
+# Means per calendar month
+monMeans<-aggregate(temperMonLocat,by=list(temperDates),mean) 
+# standard deviations per calendar month
+monSd<-aggregate(temperMonLocat,by=list(temperDates),sd) 
+# 450 months of means
+mu<-monMeans[temperDates,]$x
+# 450 months of sds
+sd<-monSd[temperDates,]$x
+# standardize the data
+temperMonLocatNorm<-(temperMonLocat-mu)/sd
+plot(temperMonLocatNorm)
+```
+```{r}
+# plot histogram of standardized data
+hist(temperMonLocatNorm)
+```
+```{r}
+# Check normality of distribution
+qqnorm(temperMonLocatNorm)
+qqline(temperMonLocatNorm)
+```
+Plotting normalized temperatures clearly shows positive trend combined with downside long tail of the distribution: sign of stable warming with instability of low outliers
+
+## 3.5 Normalized precipitable water
+
+Create time series of precipitable water, then normalize it
+```{r}
+# Select all observations closest to Miami
+waterMonLocat<-waterMon$pr_wtr[waterMon$lon==idxLon,waterMon$lat==idxLat,]
+# Find the mean and sd per month
+monMeansW<-aggregate(waterMonLocat,by=list(temperDates),mean)
+monSdW<-aggregate(waterMonLocat,by=list(temperDates),sd)
+# create a 450 observation long series of the 12 means and 12 sds
+muW<-monMeansW[temperDates,]$x
+sdW<-monSdW[temperDates,]$x
+# Normalize the observations
+waterMonLocatNorm<-(waterMonLocat-muW)/sdW
+# plot the normalized observations
+plot(waterMonLocatNorm)
+```
+```{r}
+#Histogram and qq plot of the observations
+hist(waterMonLocatNorm)
+qqnorm(waterMonLocatNorm)
+qqline(waterMonLocatNorm)
+```
+Precipitable water shows short tails which may be consistent with a limitation of the amount of water that can evaporate.
+Relationship between air temperature and precipitable water
+
+Plot the variables.
+```{r}
+plot(temperMonLocatNorm, waterMonLocatNorm)
+```
+
+We observe the expected comonotonic relationship: high temperature - increase in precipitable water due to evaporation.
+The shape of the cloud suggests that there may be a non-Gaussian relationship that cannot be captured by correlation and linear regression.
+
+The histogram of the precipitable water does not look normal. The scatter plot of the data shows heteroskedasticity.
+
+Plot empirical copula
+```{r}
+plot(rank(temperMonLocatNorm)/(nTime),rank(waterMonLocatNorm)/nTime, xlab="Temperature", ylab="Water")
+```
+
+This looks like it could be fit with a Frank copula
+
+Calcualte Pearson, Spearman and Kendall correlation coefficients
+```{r}
+pearsonCor<-cor(temperMonLocatNorm,waterMonLocatNorm)
+spearmanCor<-cor(temperMonLocatNorm,waterMonLocatNorm,method="spearman")
+kendallCor<-cor(temperMonLocatNorm,waterMonLocatNorm,method="kendall")
+#concat the 3 correlations into a vector
+c(Pearson=pearsonCor, Spearman=spearmanCor, Kendall=kendallCor)
+```
+Common Pearson correlation detects more correlation than nonlinear correlation coefficients reacting to non-Gaussian comonotonic tails.
+
+# 4. Fitting Frank copula
+```{r}
+# bind the normalized data into one dataframe
+copulaFitData <- cbind(temperMonLocatNorm, waterMonLocatNorm)
+# Create empty copula object
+Frank.Copula.Fit.Object <- frankCopula(param=5,dim=2)
+# fit the copula using given params
+Frank.Copula.fit <- fitCopula(Frank.Copula.Fit.Object,
+                    pobs(copulaFitData, ties.method="average"),
+                    method="ml",
+                    optim.method="BFGS",
+                    optim.control=list(maxit=1000))
+#Return summary of the frank copula model
+Frank.Copula.fit
+```
+
+# 5. Using Frank copula to detect anomalies
+
+Recall the advantages of using copula for anomalies detection:
+
+  -It allows bivariate anomalies, like high-temperature-low-water;
+  -It allows nonlinear dependency of the variables;
+  -It does not depend on Gaussian assumption and allows fat or short tails of distributions.
+
+Since the anomaly is defined as deviation from comonotonic dependency between temperature and water we concentrate our attention on lower right corner of the copula plot: for high levels of temperature anomaly means a significantly lower level of water than predicted by the relationship.
+
+## 5.1 Linear Model
+
+Because the relationship is nonlinear fitting regression model and detecting anomalies by looking at unusually low residuals for high levels of predictor is not expected to be the most accurate approach.
+But try it anyway.
+
+```{r}
+lmod <- lm(waterMonLocatNorm ~ temperMonLocatNorm, data=as.data.frame(copulaFitData))
+summary(lmod)
+```
+
+Check the normality of the residuals
+```{r}
+qqnorm(lmod$residuals)
+qqline(lmod$residuals)
+```
+
+Air temperature appears to be a significant predictor. but the R2 is low and the residuals are not normal. 
+
+See how many anomalies, considering temperature is above median, the linear model detects and how they are distributed in time.
+```{r}
+plot(lmod$residuals)
+abline(h=qnorm(.10)*sd(lmod$residuals))
+```
+
+```{r}
+# count the number of anomalies in the linear model
+lmAnomalyIdx<-(lmod$residuals<qnorm(.10)*sd(lmod$residuals))&(temperMonLocatNorm>median(temperMonLocatNorm))
+sum(lmAnomalyIdx)
+```
+```{r}
+# Show the separation of values that are anomalies
+plot(lmAnomalyIdx)
+```
+```{r}
+plot(temperMonLocatNorm,waterMonLocatNorm, main="Detected Anomalies")
+points(temperMonLocatNorm[lmAnomalyIdx], waterMonLocatNorm[lmAnomalyIdx], col="red")
+```
+Linear model observes significant number of points corresponding to either high-temperature-high-water or low-temperature-low-water. This makes it overestimate correlation, which in turn identifies even moderate deviations from regression line down as an outlier (below 10% quantile of the distribution of residuals).
+The number of anomalies is probably inflated and their distribution across time does not seem to change a lot.
+
+## 5.2 Approach used in the article
+
+The article by Shih-Chieh Kao, Auroop R. Ganguly, and Karsten Steinhaeuser follows the approach of detecting high-temperature-low-water anomalies using first an independence assumption for marginal distributions, setting 80% quantile for temperature and 20% quantile for water.
+
+Application of the approach to empirical copula shows:
+```{r}
+# return the values at the chosen quantiles
+highTemp<-quantile(temperMonLocatNorm,probs=.80)
+lowWater<-quantile(waterMonLocatNorm,probs=.20)
+# return the value of the uniform distribution at the chose quantiles
+highTempRank<-quantile(rank(temperMonLocatNorm)/nTime,.80)
+lowWaterRank<-quantile(rank(waterMonLocatNorm)/nTime,.20)
+#copula plot with threshold values marked
+plot(rank(temperMonLocatNorm)/nTime,rank(waterMonLocatNorm)/nTime,xlab="Temperature",ylab="Water")
+abline(v=highTempRank)
+abline(h=lowWaterRank)
+```
+
+```{r}
+# create an index of the water and temp values that are considered anomolies
+anomIdx<-(temperMonLocatNorm>highTemp)&(waterMonLocatNorm<lowWater)
+# Plot the water and temp values, highlighting the anomolies
+plot(temperMonLocatNorm,waterMonLocatNorm,xlab="Temperature",ylab="Water")
+points(temperMonLocatNorm[anomIdx],waterMonLocatNorm[anomIdx],col="red")
+abline(v=highTemp)
+abline(h=lowWater)
+```
+Such approach detects only one anomaly in spite of pretty low 20% level of both tails.
+This approach is probably on the other side of the extreme from the linear model.
+
+In the article the authors also make an adjustment of the 20% quantiles for the fitted copula (accounting for influence of the copula), but this did not seem to change the sensitivity of the detecting algorithm.
+
+## 5.3 Using quantile regression
+
+Select 5%, 95% and 50% levels and estimate quantiles of conditional distribution P(V???v|U=u), where [U,V] are the fitted Frank copula to the variables of temperature and water, using formulas in lecture slides.
+
+```{r}
+# extract theta(measure of dependence) from fitted frank copula
+theta<-Frank.Copula.fit@estimate
+# assign quantile
+alpha<-.05
+# uniform distribution of temperature
+tempRanks<-rank(temperMonLocatNorm)/nTime
+# Using the Frank quantile equation to get the 5% values 
+lowBoundWater<-sapply(tempRanks, function(z) -log(1-alpha*(1-exp(-theta))/(exp(-theta*z)+alpha*(1-exp(-theta*z))))/theta)
+
+# assign quantile for upper bound, get the 95% boundary
+alpha<-.95
+highBoundWater<-sapply(tempRanks,
+                      function(z)                        -log(1-alpha*(1-exp(-theta))/(exp(-theta*z)+alpha*(1-exp(-theta*z))))/theta)
+
+# get the values for the median line
+alpha<-.5
+midBoundWater<-sapply(tempRanks,function(z) 
+-log(1-alpha*(1-exp(-theta))/(exp(-theta*z)+alpha*(1-exp(-theta*z))))/theta)
+```
+Create empirical copula plot with upper, lower and median quantiles predicted by the Frank copula
+```{r}
+anomLowWaterIdx<-(rank(waterMonLocatNorm)/nTime<lowBoundWater)&(rank(temperMonLocatNorm)/nTime>.5)
+anomHighWaterIdx<-(rank(waterMonLocatNorm)/nTime>highBoundWater)&(rank(temperMonLocatNorm)/nTime<.5)
+plot(rank(temperMonLocatNorm)/nTime,rank(waterMonLocatNorm)/nTime,xlab="Temperature",ylab="Water")
+points(rank(temperMonLocatNorm)/nTime,lowBoundWater,col="red",pch=".")
+points(rank(temperMonLocatNorm)/nTime,highBoundWater,col="red",pch=".")
+points(rank(temperMonLocatNorm)/nTime,midBoundWater,col="green",pch="*",lwd=2)
+points(rank(temperMonLocatNorm)[anomLowWaterIdx]/nTime,rank(waterMonLocatNorm)[anomLowWaterIdx]/nTime,col="red")
+points(rank(temperMonLocatNorm)[anomHighWaterIdx]/nTime,rank(waterMonLocatNorm)[anomHighWaterIdx]/nTime,col="red")
+```
+Copula-based method detects a more realistic number and deviation of anomalies than other methods.
+```{r}
+sum(anomLowWaterIdx)/450
+sum(anomHighWaterIdx)/450
+```
+Number of detected anomalies with 5% levels on both sides is about 2% of the sample.
+
+```{r}
+plot(1:450,anomLowWaterIdx*1,main="Low Water Anomalies",ylab="Anomaly Event")
+```
+```{r}
+plot(1:450,anomHighWaterIdx*1,main="High Water Anomalies",ylab="Anomaly Event")
+```
+High-water-low-temperature anomalies are more frequent during the initial period.
+Low-water-high-temperature anomalies are more frequent during the later period.
+
+
+```{r}
+#Months when low-water-high-temperature anomalies occurred are:
+temperDates[anomLowWaterIdx]
+# Months when high-water-low-temperature anomalies occurred are:
+temperDates[anomHighWaterIdx]
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
