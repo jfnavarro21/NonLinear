@@ -1,0 +1,744 @@
+---
+title: "NL Week 7 Workshop 1"
+author: "John Navarro"
+date: "February 16, 2018"
+output: pdf_document
+---
+
+# 1 Wafers example
+
+```{r}
+suppressWarnings(library(faraway))
+suppressWarnings(library(MASS))
+suppressWarnings(library(lmtest))
+```
+Example in Chapter 7 shows data from experiment with manufactured semiconductors.
+There are four possible factors affecting the resistivity of a wafer.
+A full factorial experiment design is applied with 4 factors at 2 levels each.
+```{r}
+data(wafer)
+head(wafer)
+summary(wafer)
+```
+## 1.1 Examine the possible distribution types
+
+Check the distribution of resistivity.
+```{r}
+hist(wafer$resist)
+```
+
+First, see if the resistvity fits a gamma distributions
+```{r}
+(fitGamma <- fitdistr(wafer$resist, "gamma"))
+```
+Examine with ks test
+```{r}
+ks.test(wafer$resist, "pgamma", shape=fitGamma$estimate[1], rate=fitGamma$estimate[2])
+```
+The null hypothesis states that the sample is consistent with gamma distribution. Since the p-value is not significant, we cannot reject the null hypothesis.
+
+Might be too good to be true, check normal and lognormal distributions for the resistivity data.
+```{r}
+fit <- fitdistr(wafer$resist, "normal")
+ks.test(wafer$resist,"pnorm", fit$estimate[1], fit$estimate[2])
+```
+
+We do not reject the null hypothesis that states that the distribution is different from normal.
+
+Examine the lognormal distribution
+```{r}
+hist(log(wafer$resist))
+```
+Use KS test to fit log(resistivity) against a normal distribution
+```{r}
+lnfit <- fitdistr(log(wafer$resist), "normal")
+ks.test(log(wafer$resist), "pnorm", lnfit$estimate[1], lnfit$estimate[2])
+```
+
+Again, it appears that lognormal distribution can describe the data as well. The sample is too small to decide. And if the shape parameter of gamma is large, then it probably fits closely to a normal distribution.
+
+Following the book, fit linear model w/ log transofrmation and gamma model without transformation
+
+## 1.2 Fit lognormal model
+
+```{r}
+# .^2 includes the interactions for fitting linear model
+llmdl <- lm(log(resist)~.^2, wafer)
+# Use step to reduce variables
+rlmdl <- step(llmdl)
+```
+Step function looks at all the predictors and determines what the AIC will be if we remove the predictor. So if a predictor is removed and the AIC increases, this is an important predictor. In the case that the AIC remains low, then this predictor does little to improve the fit according to AIC. In this case we are left with 3 interactions
+
+Examine the summary of the log transformed linear model
+```{r}
+summary(rlmdl)
+```
+X4 is not significant, R2 is good, difference with adjusted R2 is noticeable. Might want to remove something
+
+## 1.3 Fit Gamma distribution
+
+Fit the original resistivity data(non transormed) with gamma distribution
+
+```{r}
+gmdl <- glm(resist ~ .^2, family=Gamma(link=log), wafer)
+rgmdl <- step(gmdl)
+```
+```{r}
+summary(rgmdl)
+```
+Observe that all coefficients returned by both models are very similar. Since gamma uses log link, we have comparable model, X4 is insignificant again
+
+Square root of dispersion parameter is the same as sigma returned by lognormal model.
+```{r}
+sqrt(summary(rgmdl)$dispersion)
+summary(rlmdl)$sigma
+```
+
+Conclusion: both models return practically equivalent results because the estimated gamma distribution is very close to normal.
+
+# 2 Insurance claims example
+
+Another example shows payments of car insurance claims for different regions in Sweden.
+The predicting variables represent:
+
+  -Mileage driven (`Kilometres') - categorical variable; for example, level 1 means less than 1,000 kilometers per year
+  -Bonus for no previous claims; equals number of years since last claim, plus 1
+  -The make of the car; factor of 8 main car makes, level 9 is for "Other"
+  -Numbers of insured (policy-years) within each group
+  -Payment - total value of payments in Skr
+  -Payment per claim perd
+  
+## 2.1 Examine the data  
+```{r}
+data(motorins)
+head(motorins)
+plot(motorins)
+```
+pairs plot doesnt tell us much, most are categorical
+```{r}
+plot(motorins$Payment)
+```
+Heavily condensed around zero: exponentiol, log normal, gamma?
+Maybe heavy tail on the right?
+
+Use log transform on payment
+```{r}
+hist(log(motorins$Payment))
+```
+Examine the fit vs normal using ks.test
+```{r}
+fit <- fitdistr(log(motorins$Payment), "normal")
+ks.test(log(motorins$Payment),"pnorm", fit$estimate[1], fit$estimate[2])
+```
+Here we can see that the Gaussian distribution is not consistent with the transformed Payment data, with the level 5% or higher
+
+# 2.2 Fit gamma regression model
+
+Select only zone 1
+Fit Gamma regression model
+The payment variable is expected to be proportional to the number of insured. In order to avoid estimation of coefficient that is very close to 1 fix this coefficient at 1 and do not estimate it
+
+```{r}
+motori <- motorins[motorins$Zone == 1,]
+gl <- glm(Payment~offset(log(Insured))+ as.numeric(Kilometres)+Make+Bonus, family=Gamma(link=log), motori)
+summary(gl)
+```
+Function offset() is used to avoid estimation of the slope of the corresponding variable. Instead, this slope is set to 1.
+
+deviance: 155.06  on 284  degrees of freedom
+Might be overfitting, but looks good. and improved from Null to fittedd model. Several unnecessary parameters.
+
+## 2.3 Fit LM with log transformed response
+
+```{r}
+llg <- glm(log(Payment) ~ offset(log(Insured))+as.numeric(Kilometres)+Make+Bonus,family=gaussian ,  motori)
+summary(llg)
+```
+```{r}
+llg <- glm(log(Payment) ~ offset(log(Insured))+as.numeric(Kilometres)+Make+Bonus,family=gaussian ,  motori)
+summary(llg)
+```
+
+There are differences between the models in this example.
+The mileage predictor is very significant in the gamma model and not significant with 5% level in lognormal model.
+Some coefficients are different. For example Make8.
+
+```{r}
+cbind(gl=exp(gl$coefficients),llg=exp(llg$coefficients))
+```
+Make 8 is the biggest difference between codefficients
+AIC would need a complete form of log-likelihood functions of both distributions.
+But constant terms that do not depend on the parameters are usually omitted.
+That is why AIC() does not help here: the difference between them is too big.
+
+scale of AIC is different, because two different distributions
+log likelihood is calculated differently, some constants will be omitted
+
+```{r}
+c(AIC(gl),AIC(llg))
+```
+However: Null deviances of both models are similar, but the residual deviance is better for gl.
+We consider gl a better fit.
+Use caution when make conclusions like this. Further analysis of residuals and interpretation of the model is needed.
+
+## 2.4 Visually compare the distributions
+
+To compare shapes of the two fitted distributions plot the probability densities.
+Shape parameters of the distributions are equal to 1/Dispersion for gamma model and ???Dispersion for the lognormal model.
+
+```{r}
+# dispersion of both models
+(shape.llg<-summary(llg)$dispersion)
+(shape.gl<-summary(gl)$dispersion)
+```
+
+
+Normalize both densities, scales so they are comparable
+```{r}
+x <- seq(0,5,by=0.05)
+plot(x,dgamma(x,1/shape.gl,scale=shape.gl),
+     type="l",ylab="",xlab="",yaxs="i",ylim=c(0,1),lwd=2)
+lines(x,dlnorm(x,meanlog=-0.30551,sdlog=sqrt(shape.llg)),
+      type="l",ylab="",xlab="",yaxs="i",ylim=c(0,1),col="red",lty=2,lwd=2)
+legend("topright",legend=c("Gamma","Lognormal"),col=c("black","red"),lty=c(1,2),lwd=2)
+```
+
+Distribution gamma, has lower peak and lower tail, resulting in a more conservative representation of payoffs.
+Lognormal is more extreme. it shows more expensive in small payoffs and higher costs due to extreme payoffs. It has higher kurtosis
+
+The number meanlog is selected to make mean value of lognormal distribution equal to 1.
+Since E[X]=exp(??+??2/2), where ??=???0.30551 and ??2= shape.llg, obtain:
+```{r}
+exp(-0.30551+shape.llg/2)
+```
+
+Example of predictions, x0 is new data
+Use both models for values of predictors given by x0
+```{r}
+(x0 <- data.frame(Make="1",Kilometres=1,Bonus=1,Insured=100))
+```
+
+Calculate predictions
+```{r}
+(pr.gl<-predict(gl,new=x0,se=T,type="response"))
+```
+```{r}
+(pr.llg<-predict(llg,new=x0,se=T,type="response"))
+```
+The corresponding values for claims in the original scale are:
+```{r}
+# Take the exponent of the prediction from the linear log model
+c(gl=pr.gl$fit,llg=exp(pr.llg$fit))
+```
+
+# 3. Mean-variance analysis by simulation
+
+## 3.1 Homogeneity Tests
+
+### 3.1.1 Bruesch Pagan Test
+
+BP test relies on gaussian assumption. H0 is homoskedasticity. 
+```{r}
+set.seed(1562)
+nSample<-500
+beta0<-.5
+beta1<-1.5
+gamma0<-.3
+gamma1<--.03
+delta<-rgamma(nSample,shape=1,scale=.1)
+hist(delta)
+```
+```{r}
+# epsilons are from gamma 
+X<-rnorm(nSample,3,1)
+eps<-sqrt(gamma0+gamma1*X+delta)
+plot(X,eps)
+```
+```{r}
+Y<-beta0+beta1*X+eps
+plot(X,Y)
+```
+
+```{r}
+summary(lm(Y~X))
+```
+
+```{r}
+bptest(Y~X)
+```
+Does not reject Null Hypothesis. which is homoskedasticity. 
+
+### 3.1.2. Bartlett's test
+
+Bartlett's test allows you to compare the variance of two or more samples to determine whether they are drawn from populations with equal variance. It is suitable for normally distributed data. The test has the null hypothesis that the variances are equal and the alternative hypothesis that they are not equal.
+Significantly relies on Gaussian assumption.
+
+Only can use for 2 gaussian distributions!!!
+```{r}
+set.seed(1562)
+s1<-rnorm(nSample,0,1.5)
+s2<-rnorm(nSample,0,.5)
+mixedSample<-as.data.frame(rbind(cbind(s1,rep(0,nSample)),cbind(s2,rep(1,nSample))))
+colnames(mixedSample)<-c("Variable","Class")
+head(mixedSample)
+```
+
+```{r}
+bartlett.test(Variable~Class, mixedSample)
+```
+
+### 3.1.3 Levene Test
+
+Levene's test is used to test if k samples have equal variances.
+
+Levene's test is an alternative to the Bartlett test. The Levine's test is less sensitive than the Bartlett test to departures from normality.
+
+If there is strong evidence that data do in fact come from a normal, or nearly normal, distribution, then Bartlett test has better performance.
+
+```{r}
+library(Rcmdr)
+```
+```{r}
+leveneTest(mixedSample$Variable, mixedSample$Class)
+```
+
+
+### 3.1.4 Fligner-Kileen Test
+
+The Fligner Killeen test is a non-parametric test for homogeneity of group variances based on ranks. It is useful when the data is non-normal or where there are outliers.
+
+Non-parametric test, very robust against Gaussian assumption.
+
+Null hypothesis is equality of variances.
+
+```{r}
+fligner.test(mixedSample$Variable, mixedSample$Class)
+```
+
+## 3.2 Using Homogeneity tests on simulated ddata
+
+Simulate linear model data
+```{r}
+set.seed(8271)
+b0<-1
+b1<-3
+X<-rnorm(100,300,100)
+summary(X)
+```
+```{r}
+Eps1<-rnorm(100,0,120)
+Y<-b0+b1*X+Eps1
+plot(X,Y)
+```
+
+```{r}
+library(lmtest)
+l<-lm(Y~X)
+plot(l$fitted.values,l$residuals)
+```
+Run BP and Fligner test since we have gaussian distribution
+```{r}
+#Fligner Killen needs two classes. separate by median
+# testing that lower and upper part have the same variance
+idx<-(l$fitted.values<median(l$fitted.values))
+bptest(Y~X)
+```
+```{r}
+fligner.test(l$residuals,idx)
+```
+Both the BP and FK tests do not reject the null hypothesis. So we cannot reject homoskedasticity.
+
+Now simulate residuals that have linear dependence on the predictor
+
+```{r}
+set.seed(8272)
+Eps2<-rnorm(100,0,X)
+plot(X,Eps2)
+```
+For larger X, we see a greater ranger.
+
+```{r}
+# create new linear model
+Y<-b0+b1*X+Eps2
+l<-lm(Y~X)
+# create the index for FK test
+idx<-(l$fitted.values<median(l$fitted.values))
+# plot residuals
+plot(l$fitted.values,l$residuals)
+```
+Tests
+```{r}
+bptest(Y~X)
+fligner.test(l$residuals,idx)
+```
+BP test rejects, FK also rejects, that there is no Homoskedasticity.
+
+Apply square root transformation to the output data
+```{r}
+Ysq<-sqrt(Y)
+plot(X,Ysq)
+```
+```{r}
+# fit the model
+lsq<-lm(Ysq~X)
+# create 2 classes
+idx<-(lsq$fitted.values<median(lsq$fitted.values))
+# look at the residuals
+plot(lsq$fitted.values,lsq$residuals)
+```
+Visually looks like no dependence on the predictor
+```{r}
+bptest(Ysq~X)
+fligner.test(lsq$residuals,idx)
+```
+
+
+BP does reject, for some reasonable levels we see homoskedasticity
+Fligner does not reject, the residuals are homoskedastic
+
+Instead of square root transformation we can use Poisson regression: for Poisson distribution E[Y]=V[Y].
+The only problem is that output has to be positive integer
+```{r}
+Y<-round(Y)
+head(Y)
+lpo<-glm(Y~X,family=poisson(link=log))
+idx<-(lpo$fitted.values<median(lpo$fitted.values))
+plot(lpo$fitted.values,lpo$residuals)
+```
+
+```{r}
+fligner.test(lpo$residuals,idx)
+```
+
+Unfortunately, Breusch-Pagan test designed specifically for Gaussian linear model.
+We cannot compare it with Fligner-Killeen test.
+Fligner-Killeen does not reject, so we say it agrees with homoskedasticity. Equality of variances
+
+
+# 4 Sales data example
+
+Data sample cpd in package faraway contains projected (xi) and actual (yi) sales of a range of products.
+Consider model yi=??xi, where ?? represents relative bias in the projected sales.
+
+Plot the data.
+
+```{r}
+data(cpd)
+head(cpd)
+```
+```{r}
+with(cpd,plot(projected,actual))
+```
+Plot empirical copula to see type of dependency.
+Estimate correlation coefficient.
+
+
+##############################################################3
+
+
+
+```{r}
+with(cpd,plot(rank(projected),rank(actual)))
+```
+
+```{r}
+with(cpd,cor(projected,actual))
+```
+We see strong comonotonic dependence, possibly explained by correlation.
+
+Fit linear model without intercept.
+```{r}
+lmod<-lm(actual~projected-1,cpd)
+summary(lmod)
+```
+Plot the data with the regression line
+```{r}
+plot(actual~projected,cpd)
+abline(lmod)
+```
+the fit is close to perfect, check the residuals
+```{r}
+hist(lmod$res)
+qqnorm(lmod$res)
+qqline(lmod$res)
+```
+plot standardized residuals
+```{r}
+plot((lmod$res-mean(lmod$res))/sd(lmod$res),type="b",ylab="Standardized Residuals")
+```
+The shape of the distribution is not normal, residuals do not seem to be homoskedastic
+```{r}
+# plotting fitted vs residuals
+plot(lmod$fitted, lmod$res, xlab="fitted",type="b",   ylab="residuals")
+```
+Check homoskedasticity with bp test
+```{r}
+idx<-(lmod$fitted.values<median(lmod$fitted.values))
+bptest(cpd$actual~cpd$projected)
+```
+bp test does not reject the null hypothesis, do not reject homoskedasticity
+```{r}
+fligner.test(lmod$residuals,idx)
+```
+FK test rejects the null hypothesis at the 5% level.
+
+Residuals cluster, this is a sign of time dependent variance
+bptest() could not detect heteroskedasticity, but fligner.test() did with level 0.04188.
+
+Apply logarithmic transformation before fitting linear model in order to stabilize the variance.
+
+```{r}
+with(cpd,plot(log(projected),log(actual)))
+```
+```{r}
+loglmod<-lm(log(actual)~log(projected)-1,cpd)
+summary(loglmod)
+```
+```{r}
+plot(actual~projected,cpd)
+abline(loglmod)
+```
+```{r}
+plot(residuals(loglmod)~log(fitted(loglmod)),ylab="Deviance residuals",
+     xlab=expression(log(hat(mu))))
+abline(h=0)
+```
+Run bp test and fk test
+```{r}
+idx<-(loglmod$fitted.values<median(loglmod$fitted.values))
+bptest(log(cpd$actual)~log(cpd$projected))
+fligner.test(loglmod$residuals,idx)
+```
+This may have helped solving the problem.
+
+Fit inverse Gaussian model
+
+Why? because we want to capture the cubic relationship between mu and variance
+Use the same link as the original linear model.
+```{r}
+igmod<-glm(actual~projected-1,family=inverse.gaussian(link="identity"),data=cpd)
+summary(igmod)
+```
+Null deviance is infinite, residual is zero. We know that projected does a good job. not suprising.
+
+Plot the fitted lines for the Linear model and Inverse Gaussian model
+```{r}
+plot(actual~projected,cpd,ylim=c(0,7000))
+abline(igmod,lty=1)
+abline(lmod,lty=2)
+legend("bottomright",legend=c("inverse Gaussian","linear"),lty=1:2,col="black")
+```
+There is significant difference in slope estimates between lmod and igmod.
+Inverse gaussian ignores outliers, fits more on the clustered points.
+
+Plot deviance residuals against fitted values stretched by log-transformation in order to distribute them more evenly.
+```{r}
+plot(residuals(igmod)~log(fitted(igmod)),ylab="Deviance residuals",
+     xlab=expression(log(hat(mu))))
+abline(h=0)
+```
+The graph shows that variance explained by this model still decreases with mean value.
+```{r}
+idx<-(igmod$fitted.values<median(igmod$fitted.values))
+fligner.test(igmod$residuals,idx)
+```
+Fit gamma model to the same data and compare the fits. Gamma will try to fit using a squared relationship between mean and variance
+Select appropriate link.
+```{r}
+gamod<-glm(actual~projected-1,family=Gamma(link=identity),data=cpd)
+summary(gamod)
+```
+Residual deviance, looks like overfitting. Why is it overfitting? We don't have a saturated model. There is practically no noise. Trying to fit a straight line. So null deviance also gives us NaN. 
+
+```{r}
+plot(actual~projected,cpd,ylim=c(0,7000))
+abline(igmod,lty=1)
+abline(lmod,lty=2)
+abline(gamod,lty=3)
+legend("bottomright",legend=c("inverse Gaussian","linear","gamma"),lty=1:3,col="black")
+```
+Gamma regression returns similar results to inverse Gaussian model. Both are different from Linear model
+```{r}
+plot(residuals(gamod)~log(fitted(igmod)),ylab="Deviance residuals",xlab=expression(log(hat(mu))))
+abline(h=0)
+```
+Looks better, but still a change in variance 
+
+```{r}
+idx<-(gamod$fitted.values<median(gamod$fitted.values))
+fligner.test(gamod$residuals,idx)
+```
+Fligner test rejects homoskedasticity, but not by much.
+
+Compare all residuals.
+```{r}
+plot((lmod$res-mean(lmod$res))/sd(lmod$res),type="p",ylab="Standardized Residuals",
+     pch=1,col="black")
+points((igmod$res-mean(igmod$res))/sd(igmod$res),pch=16,col="red")
+points((gamod$res-mean(gamod$res))/sd(gamod$res),pch=16,col="blue")
+points((loglmod$res-mean(loglmod$res))/sd(loglmod$res),pch=16,col="green")
+abline(h=0)
+legend("bottomright",legend=c("linear","inverse Gaussian",
+                              "gamma","log-linear"),pch=c(1,16,16,16),
+       col=c("black","red","blue","green"))
+```
+Even though residuals of all models are not homoskedastic inverse Gaussian (red) and gamma (blue) models seem to explain the data better.
+
+# 5. Poison treatment example
+
+This example looks at effect of treatments after poisoning by certain toxic agents.
+The data for rat poisoning and treatment experiment can be found as data set poisons in boot.
+```{r}
+suppressWarnings(library(boot))
+suppressWarnings(attach(poisons))
+head(poisons)
+```
+Look at the data with simple box plots and then interaction plots
+```{r}
+with(poisons,boxplot(time~poison,xlab="Poison type",ylab="Time"))
+with(poisons,boxplot(time~treat,xlab="Treatment",ylab="Time"))
+with(poisons,interaction.plot(treat,poison,time))
+with(poisons,interaction.plot(poison,treat,time))
+
+```
+Fit a linear model with main and interaction effects, and name the resulting linear model output object as mRats. Then look at the analysis of variance table.
+```{r}
+mRats <- lm(time ~ poison*treat,data=poisons)
+summary(mRats)
+```
+```{r}
+anova(mRats)
+```
+If there is interactions, we can't talk about main effects. they will be meaningless. Only because intereactions is insignificant in this case, then we can discuss main effects.
+
+Examine the distribution of the residuals to see if it looks normally distributed, and then plot the residuals relative to the fitted values to see if the variance tends to be larger where the mean survival time is larger. The normal quantile-quantile plot (qqnorm) should give a straight line if the residuals are normal.
+```{r}
+hist(mRats$res)
+qqnorm(mRats$res)
+qqline(mRats$res)
+```
+```{r}
+plot(mRats$fitted, mRats$res, xlab="fitted",   ylab="residuals")
+
+```
+Fitted values is time, for those who live longer, the variance is higher.
+
+Run bp test and fk test
+```{r}
+idx<-(mRats$fitted.values<median(mRats$fitted.values))
+bptest(poisons$time~poisons$poison*poisons$treat)
+fligner.test(mRats$residuals,idx)
+```
+Both bptest() and Fligner reject the null hypothesis of homoskedasticity. Since the variance indeed does not look constant, try a transformation, taking logarithms of the data.
+```{r}
+mRats.log <- lm(log(time) ~ poison*treat,data=poisons)
+summary(mRats.log)
+```
+```{r}
+hist(log(poisons$time))
+qqnorm(mRats.log$res)
+qqline(mRats.log$res)
+```
+```{r}
+plot(mRats.log$fitted, mRats.log$res, xlab="fitted", ylab="residuals",main="log response")
+
+```
+```{r}
+idx<-(mRats.log$fitted.values<median(mRats.log$fitted.values))
+bptest(log(poisons$time)~poisons$poison*poisons$treat)
+fligner.test(mRats.log$residuals,idx)
+```
+Did not work. Both tests reject homoskedasticity
+
+Here is one more transformation to try, using the reciprocal of survival time, which could be interpreted as death rate. Inverse of time remaining to live is death rate.
+
+```{r}
+mRats.recip <- lm(1/time ~ poison*treat,data=poisons)
+summary(mRats.recip)
+```
+Interactions are not significant. 
+
+```{r}
+hist(1/poisons$time)
+qqnorm(mRats.recip$res)
+qqline(mRats.recip$res)
+```
+```{r}
+plot(mRats.recip$fitted, mRats.recip$res, xlab="fitted", ylab="residuals",main="1/response")
+
+```
+Shape of the distribution did not hange, but the heteroskedasticity is gone.
+```{r}
+with(poisons,interaction.plot(treat,poison,1/time))
+with(poisons,interaction.plot(poison,treat,1/time))
+
+```
+run bp test and fk test
+```{r}
+idx<-(mRats.recip$fitted.values<median(mRats.recip$fitted.values))
+bptest(1/poisons$time~poisons$poison*poisons$treat)
+fligner.test(mRats.recip$residuals,idx)
+```
+Reciprocal transformation worked. Both tests do not reject. We can say that we solved the problem of hetero skedasticity.
+
+Since interactions did not seem to be significant, here is the model assuming no interaction:
+
+```{r}
+mRats.main <- lm(1/time ~ poison + treat,data=poisons)
+summary(mRats.main)
+```
+```{r}
+hist(1/poisons$time)
+qqnorm(mRats.main$res)
+qqline(mRats.main$res)
+```
+Histogram and qq plot are not perfect. 
+
+Examine residuals
+```{r}
+plot(mRats.main$fitted, mRats.main$res, xlab="fitted", ylab="residuals",main="1/response")
+```
+```{r}
+idx<-(mRats.main$fitted.values<median(mRats.main$fitted.values))
+bptest(1/poisons$time~poisons$poison+poisons$treat)
+fligner.test(mRats.main$residuals,idx)
+```
+Model with main effects only fits well too.
+
+Fit inverse Gaussian model.
+
+Possible links for inverse.gaussian family are: 1/mu^2, inverse, identity and log.
+Use inverse link to compare
+
+```{r}
+mRats.ig<-glm(time~poison+treat,family=inverse.gaussian(link="inverse"),data=poisons)
+summary(mRats.ig)
+```
+Residual deviance is small, might be overfitting.
+How can we check this? By using train/test methodology
+How can we remove? Cross validation 
+```{r}
+hist(mRats.ig$res)
+plot(mRats.ig$fitted, mRats.ig$res, xlab="fitted", ylab="residuals",main="Inverse Link")
+idx<-(mRats.ig$fitted.values<median(mRats.ig$fitted.values))
+fligner.test(mRats.ig$residuals,idx)
+```
+Histogram not impressive, but residuals don't look bad.
+
+
+Here we see that heteroskedasticity is removed without a transformation
+
+So we can use a transformation (inverse), or can use inverse gaussian. Both take care of the non homoskedasticity.
+
+
+
+
+
+
+
+
+
+
+
+
+
