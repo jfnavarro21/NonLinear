@@ -1,0 +1,658 @@
+---
+title: "NL Week 7 Workshop 2"
+author: "John Navarro"
+date: "February 20, 2018"
+output: pdf_document
+---
+
+```{r}
+library(faraway)
+library(MASS)
+library(nnet)
+```
+# 1. Multinomial regression with simulated data
+
+First, use simulated data to see differences between models.
+
+Load the data from book:
+John K. Kruschke, Doing Bayesian Data Analysis, A Tutorial with R, JAGS, and STAN, 2015, Elsevier
+Data are available on the author's web site. This example is also used to illustrate multinomial regression in Bayesian framework in the course Bayesian Methods.
+
+```{r}
+myData = read.csv( file=paste(dataPath,"CondLogistRegData1.csv",sep="/"))
+head(myData)
+```
+```{r}
+table(myData$Y)
+# Turn Y into a factor
+myData$Yfa<-as.factor(myData$Y)
+```
+Data contain 4 classes and 2 numeric predictor variables.
+New variable Yfa is a factor version of Y.
+
+Plot the data coding different classes with colors:
+
+Class 1 is orange
+Class 2 is magenta
+Class 3 is blue
+Class 4 is black
+```{r}
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Data",xlab="X1",ylab="X2")
+points(myData$X1[myData$Y==2],myData$X2[myData$Y==2],col="magenta",pch=16)
+points(myData$X1[myData$Y==3],myData$X2[myData$Y==3],col="blue",pch=16)
+points(myData$X1[myData$Y==4],myData$X2[myData$Y==4],col="black",pch=16)
+```
+## 1.1 Proportional odds model
+
+### 1.1.1 Logit Link
+
+proportional odds = ln(p(x)/1-p(x))
+
+Probit and complimentary log log links can also be used.
+
+The model equations show that all slopes are the same, meaning that the lines separating ordered classes are the same, class separating hyperplanes differ only by intercepts.
+We can see this manifested by the parallel lines used to separate the classes.
+
+Proportional odds models are equivalent to nested binomial models:
+
+Class 1 against classes 2, 3, 4;
+Classes 1, 2 against classes 3, 4;
+Classes 1, 2, 3 against class 4.
+Fit proportional odds model using polr() from MASS
+```{r}
+pom<-polr(Yfa~X1+X2,data=myData)
+summary(pom)
+```
+This model deals with hierarchical classes. 4 contains 1,2,3,4. 3 contains 3,2,1, class 2 contains 2 and 1 etc.
+It gives us 3 interecepts to separate the classes.
+
+```{r}
+pomPred<-predict(pom)
+```
+Summary shows only one slope coefficient per predictor, but as many slopes as number of classes, minus 1.
+
+Plot the data and predictions by pom model.
+```{r}
+par(mfrow=c(1,2))
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Data",xlab="X1",ylab="X2")
+points(myData$X1[myData$Y==2],myData$X2[myData$Y==2],col="magenta",pch=16)
+points(myData$X1[myData$Y==3],myData$X2[myData$Y==3],col="blue",pch=16)
+points(myData$X1[myData$Y==4],myData$X2[myData$Y==4],col="black",pch=16)
+
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Model",xlab="X1",ylab="X2")
+points(myData$X1[pomPred==2],myData$X2[pomPred==2],col="magenta",pch=16)
+points(myData$X1[pomPred==3],myData$X2[pomPred==3],col="blue",pch=16)
+points(myData$X1[pomPred==4],myData$X2[pomPred==4],col="black",pch=16)
+```
+Not very good. assumes pair wise logistic regression and can only use parallel lines
+
+```{r}
+par(mfrow=c(1,1))
+```
+### 1.1.2 Probit link
+
+Probit model assumes the same pattern of classes as logit, but uses probit link. Using parallel lines, we expect a similar result.
+
+Fit the model using probit as method in polr().
+```{r}
+pom.probit<-polr(Yfa~X1+X2,data=myData,method="probit")
+summary(pom.probit)
+```
+2 slopes and intercept for each separation of classes
+```{r}
+# create predictions
+pomPred.probit<-predict(pom.probit)
+```
+Plot the data and predictions by the model.
+```{r}
+par(mfrow=c(1,2))
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Data",xlab="X1",ylab="X2")
+points(myData$X1[myData$Y==2],myData$X2[myData$Y==2],col="magenta",pch=16)
+points(myData$X1[myData$Y==3],myData$X2[myData$Y==3],col="blue",pch=16)
+points(myData$X1[myData$Y==4],myData$X2[myData$Y==4],col="black",pch=16)
+
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Model",xlab="X1",ylab="X2")
+points(myData$X1[pomPred.probit==2],myData$X2[pomPred.probit==2],col="magenta",pch=16)
+points(myData$X1[pomPred.probit==3],myData$X2[pomPred.probit==3],col="blue",pch=16)
+points(myData$X1[pomPred.probit==4],myData$X2[pomPred.probit==4],col="black",pch=16)
+```
+
+```{r}
+par(mfrow=c(1,1))
+```
+Not much of a difference with logit link. 
+
+
+### 1.1.3 Complimentary log log link
+
+Complimentary log-log model is based on the same assumption about pattern of classes, but uses complimentary log-log link.
+
+Fit the model using cloglog as method in polr().
+```{r}
+pom.cloglog<-polr(Yfa~X1+X2,data=myData,method="cloglog")
+summary(pom.cloglog)
+```
+
+```{r}
+# create log log predictions
+pomPred.cloglog<-predict(pom.cloglog)
+# plot the data and the predictions
+par(mfrow=c(1,2))
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Data",xlab="X1",ylab="X2")
+points(myData$X1[myData$Y==2],myData$X2[myData$Y==2],col="magenta",pch=16)
+points(myData$X1[myData$Y==3],myData$X2[myData$Y==3],col="blue",pch=16)
+points(myData$X1[myData$Y==4],myData$X2[myData$Y==4],col="black",pch=16)
+
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Model",xlab="X1",ylab="X2")
+points(myData$X1[pomPred.cloglog==2],myData$X2[pomPred.cloglog==2],col="magenta",pch=16)
+points(myData$X1[pomPred.cloglog==3],myData$X2[pomPred.cloglog==3],col="blue",pch=16)
+points(myData$X1[pomPred.cloglog==4],myData$X2[pomPred.cloglog==4],col="black",pch=16)
+```
+
+```{r}
+par(mfrow=c(1,1))
+```
+Similar results
+
+## 1.2 Multinomial logit model
+
+All three models in the previous sections showed poor fit because the pattern of classes was not consistent with proportional odds assumption: classes did not form layers on the plot.
+
+Multinomial regression does not make assumption about monotonicity of classes locations.
+
+Instead it defines linear boundaries between all pairs of classes. This model will consider one class vs all other classes.
+
+The following multinomial regression function multinom() from nnet trains multinomial logit model using neural networks.
+
+Fit the model.
+```{r}
+mmod<-multinom(Yfa~X1+X2,data=myData)
+# return the summary
+(smry<-summary(mmod))
+```
+We have intercepts and slopes (and standard errors) for separation. They are NOT parallel. but they will separate one class from all others.
+
+```{r}
+# create predictions
+mmodPred<-predict(mmod)
+```
+Show how the model separates all classes.
+
+Extract coefficients and make a function calculating hyperplane from coefficients.
+```{r}
+#Table of coefficients
+smry$coefficients
+```
+```{r}
+makeHyperplane<-function(x1,coeffi){
+  cbind(x1,-(coeffi[1]+x1*coeffi[2])/coeffi[3])
+}
+```
+
+Make hyperplanes separating class 1 from classes 2, 3, 4.
+This will use each row of estimated coefficients:
+??i,j=??0,1|j + ??1,1|jXi,1+??2,1|jXi,2=ln(pi,jpi,1), j=2,3,4.
+
+Find the hyperplanes satisfying
+X2=??0,1|j+??1,1|jX1?????2,1|j.
+
+For hyperplanes separating class 2 from classes 3 and 4 use differences between rows of coefficients.
+For example, hyperplane separating class 2 from class 3 is based on:
+??i,2=??0,1|2+??1,1|2Xi,1+??2,1|2Xi,2=ln(pi,2pi,1)
+and
+??i,3=??0,1|3+??1,1|3Xi,1+??2,1|3Xi,2=ln(pi,3pi,1),
+from which by differencing find
+[??0,1|3?????0,1|2]+[??1,1|3?????1,1|2]Xi,1+[??2,1|3?????2,1|2]Xi,2=ln(pi,3pi,1)???ln(pi,2pi,1)=ln(pi,3pi,2)
+
+Then the hyperplane satisfies
+X2=[??0,1|3?????0,1|2]+[??1,1|3?????1,1|2]Xi,1???[??2,1|3?????2,1|2].
+
+
+```{r}
+hpplane12<-makeHyperplane(myData$X1,smry$coefficients[1,])
+hpplane13<-makeHyperplane(myData$X1,smry$coefficients[2,])
+hpplane14<-makeHyperplane(myData$X1,smry$coefficients[3,])
+hpplane23<-makeHyperplane(myData$X1,smry$coefficients[2,]-smry$coefficients[1,])
+hpplane24<-makeHyperplane(myData$X1,smry$coefficients[3,]-smry$coefficients[1,])
+hpplane34<-makeHyperplane(myData$X1,smry$coefficients[3,]-smry$coefficients[2,])
+```
+
+This model has different slopes and intercepts for each boundary.
+
+Plot the data and model predictions.
+```{r}
+par(mfrow=c(1,2))
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Data",xlab="X1",ylab="X2")
+points(myData$X1[myData$Y==2],myData$X2[myData$Y==2],col="magenta",pch=16)
+points(myData$X1[myData$Y==3],myData$X2[myData$Y==3],col="blue",pch=16)
+points(myData$X1[myData$Y==4],myData$X2[myData$Y==4],col="black",pch=16)
+lines(hpplane12,col="grey",lty=2,lwd=1)
+lines(hpplane13,col="grey",lty=2,lwd=1)
+lines(hpplane14,col="grey",lty=2,lwd=1)
+lines(hpplane23,col="grey",lty=2,lwd=1)
+lines(hpplane24,col="grey",lty=2,lwd=1)
+lines(hpplane34,col="grey",lty=2,lwd=1)
+
+# Separate class 1 from classes 2,3,4
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Model, Sep. Class 1",xlab="X1",ylab="X2")
+points(myData$X1[mmodPred==2],myData$X2[mmodPred==2],col="magenta",pch=16)
+points(myData$X1[mmodPred==3],myData$X2[mmodPred==3],col="blue",pch=16)
+points(myData$X1[mmodPred==4],myData$X2[mmodPred==4],col="black",pch=16)
+lines(hpplane12,col="grey",lty=2,lwd=1)
+lines(hpplane13,col="grey",lty=2,lwd=1)
+lines(hpplane14,col="grey",lty=2,lwd=1)
+```
+
+```{r}
+par(mfrow=c(1,2))
+# Separate class 2 from classes 3,4
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Model, Sep. Class 2",xlab="X1",ylab="X2")
+points(myData$X1[mmodPred==2],myData$X2[mmodPred==2],col="magenta",pch=16)
+points(myData$X1[mmodPred==3],myData$X2[mmodPred==3],col="blue",pch=16)
+points(myData$X1[mmodPred==4],myData$X2[mmodPred==4],col="black",pch=16)
+lines(hpplane23,col="grey",lty=2,lwd=1)
+lines(hpplane24,col="grey",lty=2,lwd=1)
+
+# Separate class 3 from class 4
+plot(myData$X1,myData$X2,pch=16,col="orange",main="Model, Sep. Class 3",xlab="X1",ylab="X2")
+points(myData$X1[mmodPred==2],myData$X2[mmodPred==2],col="magenta",pch=16)
+points(myData$X1[mmodPred==3],myData$X2[mmodPred==3],col="blue",pch=16)
+points(myData$X1[mmodPred==4],myData$X2[mmodPred==4],col="black",pch=16)
+lines(hpplane34,col="grey",lty=2,lwd=1)
+```
+
+```{r}
+par(mfrow=c(1,1))
+```
+Model unconstrained by proportional odds assumption captures the pattern better.
+
+# 2. Election data example
+
+## 2.1 Multinomial regression
+
+The following example is based on data nes96 from faraway.
+```{r}
+head(nes96)
+```
+Several classes of self identification within the party. Categories within Dem, Indep, and Repbulicans
+
+Demographic information as predictors.
+
+Response is party identification PID with levels
+```{r}
+levels(nes96$PID)
+```
+For convenience combine all colors of Democrats in one category "Democrat". Do the same with Independents and with Republicans.
+```{r}
+sPID<-nes96$PID
+# combine into only 3 levels for party affilitaion
+levels(sPID)<-c("Democrat","Democrat","Independent","Independent","Independent","Republican","Republican")
+summary(sPID)
+```
+Transform categorical buckets of income into numeric variable by taking midpoint of each range.
+```{r}
+table(nes96$income)
+```
+```{r}
+inca<-c(1.5,4,6,8,9.5,10.5,11.5,12.5,13.5,14.5,16,18.5,21,23.5,27.5,32.5,37.5,42.5,47.5,55,67.5,82.5,97.5,115)
+nincome<-inca[unclass(nes96$income)]
+summary(nincome)
+```
+Other two variables included in the example are levels of education and age
+```{r}
+table(nes96$educ)
+table(nes96$age)
+```
+Plot party categories in the space of income vs. age.
+```{r}
+idxD<-sPID=="Democrat"
+idxI<-sPID=="Independent"
+idxR<-sPID=="Republican"
+plot(nes96$age,nincome)
+points(nes96$age[idxD],nincome[idxD],col="orange")
+points(nes96$age[idxI],nincome[idxI],col="blue")
+points(nes96$age[idxR],nincome[idxR],col="magenta")
+```
+Points do not clearly separate.
+
+Show how proportions of party affiliations change with education for the three party identifications.
+
+Look at dependence on education level
+```{r}
+matplot(prop.table(table(nes96$educ,sPID),1),type="l",xlab="Education",
+        ylab="Proportion",lty=c(1,2,3),lwd=2,col=c("black","red","dark green"))
+legend("topright",legend=c("Dem","Ind","Rep"),lty=c(1,2,3),col=c("black","red","dark green"),lwd=2)
+```
+
+
+Show changes of proportions with income level.
+```{r}
+cutinc<-cut(nincome,7)
+il<-c(8,26,42,58,74,90,107)
+matplot(il,prop.table(table(cutinc,sPID),1),type="l",xlab="Income",
+        ylab="Proportion",lty=c(1,2,3),col=c("black","red","dark green"),lwd=2)
+legend("top",legend=c("Dem","Ind","Rep"),lty=c(1,2,3),col=c("black","red","dark green"),lwd=2)
+```
+Show changes of proportions with age.
+```{r}
+cutage<-cut(nes96$age,7)
+al<-c(24,34,44,54,65,75,85)
+matplot(al,prop.table(table(cutage,sPID),1),type="l",xlab="Age",
+        ylab="Proportion",lty=c(1,2,3),col=c("black","red","dark green"),ylim=c(0,.5),lwd=2)
+legend("bottomleft",legend=c("Dem","Ind","Rep"),lty=c(1,2,3),col=c("black","red","dark green"),lwd=2)
+```
+Observe that:
+
+Affiliation with Democrats drops with education and levels at around college degree. At the same time affiliation with Republicans grows with education level and stabilizes around the same college degree level. Proportion of Independents remains pretty stable with educational level.
+Proportion of Democrats drops with income and Republicans show the opposite trend. Proportion of Independents also tends to grow, but slower than proportion of Republicans.
+Dependence of proportions on age is not strong for all three categories.
+In order to assess statistical significance of these trends fit a multinomial logit model.
+```{r}
+mmod<-multinom(sPID~age+educ+nincome,data=nes96)
+```
+select variables for the model based on AIC using step().
+```{r}
+mmodi<-step(mmod)
+head(mmodi$fitted.values)
+head(predict(mmodi,type="probs"))
+head(predict(mmodi,type="class"))
+```
+At the first step education gets removed, at the second step age is removed.
+The final model is sPID~nincome.
+
+Plot probabilities of affiliations predicted by the model.
+```{r}
+(pred<-predict(mmodi,data.frame(nincome=il),type="probs"))
+```
+```{r}
+matplot(il,pred,type="l",xlab="Income",ylab="Predicted Probability",
+        lty=c(1,2,3),col=c("black","red","dark green"),lwd=2)
+legend("top",legend=c("Dem","Ind","Rep"),lty=c(1,2,3),col=c("black","red","dark green"),lwd=2)
+```
+Interpret coefficients.
+Since this is logistic
+These coefficients show us how the log odds change when the predictor changes by one using. On e unit in income is 1,000. So, how do the log odds change when income changes by 1,000
+```{r}
+summary(mmodi)
+coef(mmodi)
+```
+To predict probabilities at zero income level use intercepts:
+```{r}
+
+head(mmodi$fitted.values,1)
+head(predict(mmodi,type="probs"),1)
+# calculating probablities from coefficients
+# manual calcualtion of predicted 0 income person
+exp(c(0,t(coef(mmodi))[1,]))/sum(exp(c(0,t(coef(mmodi))[1,])))
+```
+where t(coef(mmodi))[1,] equals row-vector of intercepts
+```{r}
+t(coef(mmodi))[1,]
+```
+Compare with predicted probabilities at income level zero:
+```{r}
+predict(mmodi,data.frame(nincome=0),type="prob")
+```
+Slopes show changes in log odds of moving from Democrat to Republican and to Independent, respectively, per increase of income by $1,000.
+```{r}
+exp(coef(mmodi)[1,1]) # exp of intercept Dem/Ind
+predict(mmodi,data.frame(nincome=0),type="prob")[2]/   # P{Indep}/P{Dem}
+  predict(mmodi,data.frame(nincome=0),type="prob")[1]
+exp(coef(mmodi)[2,1]) # exp of intercept Dem/Rep
+predict(mmodi,data.frame(nincome=0),type="prob")[3]/   # P{Rep}/P{Dem}
+  predict(mmodi,data.frame(nincome=0),type="prob")[1]
+
+```
+
+```{r}
+coef(mmodi)[1,2] # slope Dem/Ind
+```
+```{r}
+odds.Ind_Dem.0<-log(predict(mmodi,data.frame(nincome=0),type="prob")[2]/   # P{Indep}/P{Dem}
+  predict(mmodi,data.frame(nincome=0),type="prob")[1])
+odds.Ind_Dem.1<-log(predict(mmodi,data.frame(nincome=1),type="prob")[2]/   # P{Indep}/P{Dem}
+  predict(mmodi,data.frame(nincome=1),type="prob")[1])
+odds.Ind_Dem.1-odds.Ind_Dem.0 # change of log odds Dem/Ind
+```
+Another way to check this interpretation, first, predict probabilities with income difference of $1,000.
+```{r}
+(pred<-predict(mmodi,data.frame(nincome=c(0,1)),type="probs"))
+```
+Then use these probabilities to calculate log odds.
+Log odds for multinomial model are defined as:
+```{r}
+log(pred[1,1]*pred[2,2]/(pred[1,2]*pred[2,1]))
+```
+Here log odds at income zero is by definition ln(p2,1p1,1) and log odds at income $1,000 is ln(p2,2p1,2).
+
+Similarly, calculate slope for Republican as log odds change:
+```{r}
+log(pred[1,1]*pred[2,3]/(pred[1,3]*pred[2,1]))
+coef(mmodi)[2,2]
+```
+## 2.2 Ordinal multinomial regression
+
+Even though, categories of the response are not ordinal, fit proportional odds model using polr() from MASS.
+```{r}
+# proportional odds model (logit from Example 1)
+pomod<-polr(sPID~age+educ+nincome, data=nes96)
+```
+Compare deviance and number of parameters for pomod and mmod.
+```{r}
+rbind(Pomod=c(deviance=deviance(pomod),Parnum=pomod$edf),
+      Mmod=c(deviance=deviance(mmod),Parnum=mmod$edf))
+```
+Proportional odds model has fewer parameters, but the fit is not as good as multinomial model has.
+Select variables using step().
+```{r}
+pomodi<-step(pomod)
+```
+The result is the same as with multinomial regression: the resulting model is sPID~nincome.
+
+# 3 Predicting the Medicare Functional Classification level k-level
+
+This example is based on paper "How well can the Amputee Mobility Predictor and patient characteristics predict the Medicare Functional Classification Level (K-level) in people with unilateral transfemoral and transtibial amputation?", Prosthetics & Orthotics International by M.P. Dillon, M.J. Major, B. Kaluf, Y. Balasanov and S. Fatone.
+
+When patients in the U.S. lose lower limbs due to amputation the amount of reimbursement paid by Medicare for prosthesis depends on assessment of medical necessity, including functional mobility and rehabilitation potential of individuals with lower limb loss. The amount of reimbursement in turn may affect the type of prosthesis obtained by amputee.
+For evaluation of functional mobility and rehabilitation potential Centers for Medicare and Medicaid Services adopted the Medicare Functional Classification Level (MFCL) index called K-levels.
+K-levels is a five-level categorical index with categories from lowest level
+
+Level 0: "Does not have the ability or potential to ambulate or transfer safely with a prosthesis"
+to highest level
+
+Level 4: "Patient has the ability or potential for prosthetic ambulation that exceeds the basic ambulation skills, exhibiting high impact, stress, or energy levels, typical of the prosthetic demands of the child, active adult, or athlete".
+Assignment of a K-level for each individual is made by a clinician based on qualitative description of each category. In order to avoid subjectivity in assignment process clinicians use the Amputee Mobility Predictor (AMP), a score system that is expected to predict K-level.
+In order to improve predictive power, AMP may be combined with additional objective predictors characterizing patients like age, weight, etc.
+Since K-levels response is an ordinal categorical variable prediction can be based on ordinal logistic regression.
+
+In this workshop prediction of the Medicare Functional Classification Level (K-level) is done with only two out of several predictors used in the article: the Amputee Mobility Predictor (AMP) and amputee age.
+
+Also for the purposes of this example we combine participants in the experiment with observed "K-level 1" and observed "K-level 2" in one category "K-level 2".
+So, the response in these experimental data contains 3 levels: 2, 3 and 4.
+
+Both predictors for this example were normalized.
+```{r}
+library(MASS)
+library(nnet)
+```
+## 3.1 Data
+
+Read the experiment data
+```{r}
+dta<-read.csv(paste(dataPath,"Klevel_Prediction_Data.csv",sep="/"))
+dta$K_level_F<-as.factor(dta$K_level)
+```
+Plot the data.
+```{r}
+idx2<-dta$K_level==2
+idx3<-dta$K_level==3
+idx4<-dta$K_level==4
+plot(dta$AMP,dta$Age,col="orange",pch=16,xlab="AMP",ylab="Age")
+points(dta$AMP[idx3],dta$Age[idx3],col="blue",pch=16)
+points(dta$AMP[idx4],dta$Age[idx4],col="magenta",pch=16)
+legend("bottomleft",
+       legend=c("K-level 2","K-level 3","K-level 4"),
+       pch=16,col=c("orange","blue","magenta"))
+```
+## 3.2 Fitting ordinal logistic regression
+
+Use function polr() from library MASS to fit ordinal logistic regression model.
+```{r}
+orlog<-polr(K_level_F~AMP+Age,data=dta)
+summary(orlog)
+```
+The summary shows that increase of normalized AMP score by 1 point changes odds for event "K-level ??? j" 0.0794492 times while increase of normalized age by 1 unit changes same odds 2.8048226 times.
+
+Plot the data and the predicted K-level scores.
+```{r}
+orlogPred<-predict(orlog)
+predIdx2<-orlogPred==2
+predIdx3<-orlogPred==3
+predIdx4<-orlogPred==4
+
+par(mfrow=c(1,2))
+plot(dta$AMP,dta$Age,col="orange",pch=16,xlab="AMP",ylab="Age",main="Data")
+points(dta$AMP[idx3],dta$Age[idx3],col="blue",pch=16)
+points(dta$AMP[idx4],dta$Age[idx4],col="magenta",pch=16)
+legend("bottomleft",
+       legend=c("K-level 2","K-level 3","K-level 4"),
+       pch=16,col=c("orange","blue","magenta"))
+
+plot(dta$AMP,dta$Age,col="orange",pch=16,xlab="AMP",ylab="Age",main="Predictions")
+points(dta$AMP[predIdx3],dta$Age[predIdx3],col="blue",pch=16)
+points(dta$AMP[predIdx4],dta$Age[predIdx4],col="magenta",pch=16)
+legend("bottomleft",
+       legend=c("K-level 2","K-level 3","K-level 4"),
+       pch=16,col=c("orange","blue","magenta"))
+```
+```{r}
+par(mfrow=c(1,1))
+```
+Plot on the left shows observed categories and plot on he right shows typical pattern of ordinal logistic regression with parallel hyperplanes separating the classes.
+
+## 3.3 Fitting multinomial model
+
+
+
+```{r}
+mumod<-multinom(K_level_F~AMP+Age,data=dta)
+summary(mumod)
+```
+Compare predictions by proportional odds model and multinomial model.
+```{r}
+mumodPred<-predict(mumod)
+mumodPredIdx2<-mumodPred==2
+mumodPredIdx3<-mumodPred==3
+mumodPredIdx4<-mumodPred==4
+
+par(mfrow=c(1,2))
+plot(dta$AMP,dta$Age,col="orange",pch=16,xlab="AMP",ylab="Age",
+     main="Predictions by Proportional Odds")
+points(dta$AMP[predIdx3],dta$Age[predIdx3],col="blue",pch=16)
+points(dta$AMP[predIdx4],dta$Age[predIdx4],col="magenta",pch=16)
+legend("bottomleft",
+       legend=c("K-level 2","K-level 3","K-level 4"),
+       pch=16,col=c("orange","blue","magenta"))
+
+
+plot(dta$AMP,dta$Age,col="orange",pch=16,xlab="AMP",ylab="Age",main="Predictions by Multinomial")
+points(dta$AMP[mumodPredIdx3],dta$Age[mumodPredIdx3],col="blue",pch=16)
+points(dta$AMP[mumodPredIdx4],dta$Age[mumodPredIdx4],col="magenta",pch=16)
+legend("bottomleft",
+       legend=c("K-level 2","K-level 3","K-level 4"),
+       pch=16,col=c("orange","blue","magenta"))
+```
+
+```{r}
+par(mfrow=c(1,1))
+```
+Comparison shows that multinomial model is slightly more flexible and allows variation in slopes of hyperplanes separating different classes. For example, multinomial model estimates steeper slope between K-level 3 and K-level 4.
+
+#4. Using log loss function for model selection
+
+For multi-class classification there is a common measure of quality of classification called log loss.
+```{r}
+MultiLogLoss <- function(act, pred)
+{
+  eps = 1e-15;
+  if (!is.matrix(pred)) pred<-t(as.matrix(pred))
+  if (!is.matrix(act)) act<-t(as.matrix(act))
+  nr <- nrow(pred)
+#  pred = matrix(sapply( pred, function(x) max(eps,x)), nrow = nr)      
+#  pred = matrix(sapply( pred, function(x) min(1-eps,x)), nrow = nr)
+  #normalize rows
+  ll = sum(act*log(sweep(pred, 1, rowSums(pred), FUN="/")))
+  ll = -ll/nrow(act)
+  return(ll);
+}
+
+response.matrix <- function(Y)
+{
+  y_res <- matrix(NA,nrow = 0,ncol = 3)
+  for (i in 1:length(Y))
+  { 
+    if (Y[i] == 2)
+      y_res <- rbind(y_res,c(1,0,0))
+    if (Y[i] == 3)
+      y_res <- rbind(y_res,c(0,1,0))
+    if (Y[i] == 4)
+      y_res <- rbind(y_res,c(0,0,1))
+  }  
+  return (y_res)
+}
+```
+Use log loss function to decide which model fits the sample better.
+
+Calculate the matrix of true responses and predicted probabilities of the K levels 2, 3, 4.
+```{r}
+# create the response matrix of 0s and 1s
+trueY<-response.matrix(dta$K_level_F)
+# create probabilities from multinomial logit model
+mumodProb<-predict(mumod, type="probs")
+# create probabilities from the proportional odds model
+orlogProb<-predict(orlog, type="probs")
+```
+In order to avoid a log loss that explodes to infinity, 
+Replace small probabilities, less than ??=10???16, with ?? and large probabilities, greater than 1?????=1???10???16 with 1?????.
+Normalize probabilities in each row after truncating them.
+```{r}
+eps<-10^(-16)  
+nr <- nrow(mumodProb)
+#truncate
+mumodProb<-matrix(sapply(mumodProb, function(x) max(eps,x)), nrow = nr)   
+mumodProb<-matrix(sapply(mumodProb, function(x) min(1-eps,x)), nrow = nr) 
+# replace the low probabilities with eps and high prob with 1- eps
+orlogProb <- matrix(sapply(orlogProb, function(x) max(eps,x)), nrow = nr)
+orlogProb <- matrix(sapply(orlogProb, function(x) min(1-eps,x)), nrow = nr)
+#normalize rows
+# sweep out a summary statistic (row sums) using divisor as a function
+mumodProb<-sweep(mumodProb, 1, rowSums(mumodProb), FUN="/")
+orlogProb<-sweep(orlogProb, 1, rowSums(orlogProb), FUN="/")
+```
+Call log loss function.
+```{r}
+# calculate the multilog loss of both models
+MultiLogLoss(trueY,orlogProb)
+MultiLogLoss(trueY,mumodProb)
+```
+Since we try to achieve a lower multilog loss, we say that the multinomial logit model performs better
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
